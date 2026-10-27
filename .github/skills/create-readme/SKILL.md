@@ -1,8 +1,8 @@
 ---
-agent: 'agent'
+name: create-readme
 description: 'Create a comprehensive README.md file for the project'
+disable-model-invocation: true
 ---
-
 ## Role
 
 You're a senior software engineer with extensive experience in open source projects. You create appealing, informative, and easy-to-read README files.
