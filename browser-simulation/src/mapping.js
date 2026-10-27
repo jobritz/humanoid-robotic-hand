@@ -30,9 +30,9 @@ export function rawFeatures(lm) {
   return out;
 }
 
-const FLEX_MAX = 45.0;                    // wie in make_hand.py
+const FLEX_MAX = 90.0;                    // wie in make_hand.py
 const ABD_MAX = 35.0;                     // wie in make_hand.py
-const ABD_GAIN = 0.8;                     // empirisch, um die Spreizbewegung zu verstärken
+const ABD_GAIN = 0.4;                     // empirisch, um die Spreizbewegung zu verstärken
 const ABD_SIGN = [1, 1, 1, 1];            // pro Finger auf -1 setzen, falls Spreizen verkehrt herum läuft
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 

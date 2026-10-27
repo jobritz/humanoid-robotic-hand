@@ -10,56 +10,56 @@
     <geom name='palm' type='box' size='0.045 0.045 0.010' rgba='0.30 0.35 0.45 1'/>
     <body name='index_0' pos='-0.027 0.045 0' euler='0 0 0'>
       <joint name='index_abd' axis='0 0 1' range='-35.0 35.0'/>
-      <joint name='index_mcp' axis='-1 0 0' range='0 45.0'/>
+      <joint name='index_mcp' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.032 0' size='0.0085'/>
     <body name='index_1' pos='0 0.032 0'>
       
-      <joint name='index_pip' axis='-1 0 0' range='0 1.7'/>
+      <joint name='index_pip' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.022 0' size='0.008'/>
     <body name='index_2' pos='0 0.022 0'>
       
-      <joint name='index_dip' axis='-1 0 0' range='0 1.7'/>
+      <joint name='index_dip' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.018 0' size='0.007500000000000001'/>
     </body>
     </body>
     </body>
     <body name='middle_0' pos='0.0 0.047 0' euler='0 0 0'>
       <joint name='middle_abd' axis='0 0 1' range='-35.0 35.0'/>
-      <joint name='middle_mcp' axis='-1 0 0' range='0 45.0'/>
+      <joint name='middle_mcp' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.035 0' size='0.0085'/>
     <body name='middle_1' pos='0 0.035 0'>
       
-      <joint name='middle_pip' axis='-1 0 0' range='0 1.7'/>
+      <joint name='middle_pip' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.025 0' size='0.008'/>
     <body name='middle_2' pos='0 0.025 0'>
       
-      <joint name='middle_dip' axis='-1 0 0' range='0 1.7'/>
+      <joint name='middle_dip' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.019 0' size='0.007500000000000001'/>
     </body>
     </body>
     </body>
     <body name='ring_0' pos='0.027 0.045 0' euler='0 0 0'>
       <joint name='ring_abd' axis='0 0 1' range='-35.0 35.0'/>
-      <joint name='ring_mcp' axis='-1 0 0' range='0 45.0'/>
+      <joint name='ring_mcp' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.032 0' size='0.0085'/>
     <body name='ring_1' pos='0 0.032 0'>
       
-      <joint name='ring_pip' axis='-1 0 0' range='0 1.7'/>
+      <joint name='ring_pip' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.023 0' size='0.008'/>
     <body name='ring_2' pos='0 0.023 0'>
       
-      <joint name='ring_dip' axis='-1 0 0' range='0 1.7'/>
+      <joint name='ring_dip' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.018 0' size='0.007500000000000001'/>
     </body>
     </body>
     </body>
     <body name='thumb_0' pos='-0.045 -0.01 0' euler='0 0 55'>
       <joint name='thumb_abd' axis='0 0 1' range='-35.0 35.0'/>
-      <joint name='thumb_mcp' axis='-1 0 0' range='0 45.0'/>
+      <joint name='thumb_mcp' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.04 0' size='0.0085'/>
     <body name='thumb_1' pos='0 0.04 0'>
       
-      <joint name='thumb_pip' axis='-1 0 0' range='0 1.7'/>
+      <joint name='thumb_pip' axis='-1 0 0' range='0 90.0'/>
       <geom type='capsule' fromto='0 0 0 0 0.032 0' size='0.008'/>
     </body>
     </body>
@@ -74,13 +74,13 @@
     <joint joint1='thumb_pip' joint2='thumb_mcp' polycoef='0 0.9 0 0 0'/>
   </equality>
   <actuator>
-    <position name='index_flex' joint='index_mcp' ctrlrange='0 45.0'/>
+    <position name='index_flex' joint='index_mcp' ctrlrange='0 90.0'/>
     <position name='index_abd' joint='index_abd' ctrlrange='-35.0 35.0'/>
-    <position name='middle_flex' joint='middle_mcp' ctrlrange='0 45.0'/>
+    <position name='middle_flex' joint='middle_mcp' ctrlrange='0 90.0'/>
     <position name='middle_abd' joint='middle_abd' ctrlrange='-35.0 35.0'/>
-    <position name='ring_flex' joint='ring_mcp' ctrlrange='0 45.0'/>
+    <position name='ring_flex' joint='ring_mcp' ctrlrange='0 90.0'/>
     <position name='ring_abd' joint='ring_abd' ctrlrange='-35.0 35.0'/>
-    <position name='thumb_flex' joint='thumb_mcp' ctrlrange='0 45.0'/>
+    <position name='thumb_flex' joint='thumb_mcp' ctrlrange='0 90.0'/>
     <position name='thumb_abd' joint='thumb_abd' ctrlrange='-35.0 35.0'/>
   </actuator>
 </mujoco>

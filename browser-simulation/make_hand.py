@@ -9,10 +9,9 @@ FINGERS = [
     ('ring',    0.027,  0.045,  0, (0.032, 0.023, 0.018)),
     ('thumb',  -0.045, -0.010, 55, (0.040, 0.032)),
 ]
-FLEX_MAX = 45.0   # degree, Grundgelenk
+FLEX_MAX = 90.0   # degree, Grundgelenk
 ABD_MAX = 35.0   # degree, Spreizen
 JOINTS = ['mcp', 'pip', 'dip']
-#COUPLING = 0.9   # Endgelenk = 0.9 * Grundgelenk
 
 
 def finger(name, x, y, yaw, lens):
@@ -27,7 +26,7 @@ def finger(name, x, y, yaw, lens):
         else:
             head = f"pos='0 {lens[i - 1]} 0'"
             abd = ''
-            rng = 1.7
+            rng = FLEX_MAX #* (0.9 if name == 'thumb' and j == 'pip' else 0.67)  # pip = 1.0*mcp, dip = 0.67*pip, Daumen: pip = 0.9*mcp
         xml = f'''
     <body name='{name}_{i}' {head}>
       {abd}
