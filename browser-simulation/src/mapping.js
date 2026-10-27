@@ -31,7 +31,7 @@ export function rawFeatures(lm) {
 }
 
 const FLEX_MAX = 90.0;                    // wie in make_hand.py
-const FLEX_GAIN = 0.1;                   // empirisch, um die Beugebewegung zu verstärken
+const FLEX_GAIN = 0.05;                   // empirisch, um die Beugebewegung zu verstärken
 const ABD_MAX = 35.0;                     // wie in make_hand.py
 const ABD_GAIN = 1.0;                     // empirisch, um die Spreizbewegung zu verstärken
 const ABD_SIGN = [1, 1, 1, 1];            // pro Finger auf -1 setzen, falls Spreizen verkehrt herum läuft
