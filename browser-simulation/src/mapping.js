@@ -31,8 +31,9 @@ export function rawFeatures(lm) {
 }
 
 const FLEX_MAX = 90.0;                    // wie in make_hand.py
+const FLEX_GAIN = 0.1;                   // empirisch, um die Beugebewegung zu verstärken
 const ABD_MAX = 35.0;                     // wie in make_hand.py
-const ABD_GAIN = 0.4;                     // empirisch, um die Spreizbewegung zu verstärken
+const ABD_GAIN = 1.0;                     // empirisch, um die Spreizbewegung zu verstärken
 const ABD_SIGN = [1, 1, 1, 1];            // pro Finger auf -1 setzen, falls Spreizen verkehrt herum läuft
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -59,7 +60,7 @@ export class Mapper {
       const c = this.fist ? this.fist[fi] : this.hi[f];
       const t = clamp((raw[fi] - o) / Math.max(c - o, 0.3), 0, 1);
       const a0 = this.open ? this.open[ai] : 0;
-      target[fi] = t * FLEX_MAX;
+      target[fi] = t * FLEX_MAX * FLEX_GAIN;
       target[ai] = clamp(ABD_SIGN[f] * ABD_GAIN * (raw[ai] - a0), -ABD_MAX, ABD_MAX);
     }
     for (let i = 0; i < 8; i++) this.out[i] += alpha * (target[i] - this.out[i]);
