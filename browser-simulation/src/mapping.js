@@ -3,7 +3,7 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const unit = (a) => { const n = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / n, a[1] / n, a[2] / n]; };
 const angle = (a, b) => Math.acos(Math.min(1, Math.max(-1, dot(unit(a), unit(b)))));
 
-const FINGER_IDS = { index: [5, 6, 7], middle: [9, 10, 11], ring: [13, 14, 15] };
+const FINGER_IDS = { index: [5, 6, 7, 8], middle: [9, 10, 11, 12], ring: [13, 14, 15, 16] };
 
 // lm = 21 Welt-Landmarken -> [idxFlex, idxAbd, midFlex, midAbd, ringFlex, ringAbd, thumbFlex, thumbAbd] in rad
 export function rawFeatures(lm) {
@@ -15,11 +15,12 @@ export function rawFeatures(lm) {
 
   const out = [];
   for (const name of ['index', 'middle', 'ring']) {
-    const [m, p, d] = FINGER_IDS[name].map((i) => lm[i]);
+    const [m, p, d, t] = FINGER_IDS[name].map((i) => lm[i]);
     const bendMcp = angle(sub(m, wrist), sub(p, m));
     const bendPip = angle(sub(p, m), sub(d, p));
+    const bendDip = angle(sub(d, p), sub(t, d));
     const v = sub(p, m);
-    out.push(bendMcp + bendPip, Math.atan2(dot(v, side), dot(v, fwd)));
+    out.push(bendMcp + bendPip + bendDip, Math.atan2(dot(v, side), dot(v, fwd)));
   }
   // Daumen: Landmarken 1..4
   const [c, m, i, t] = [lm[1], lm[2], lm[3], lm[4]];
@@ -29,9 +30,9 @@ export function rawFeatures(lm) {
   return out;
 }
 
-const FLEX_MAX = 1.6;                     // wie in make_hand.py
-const ABD_MAX = 0.35;
-const ABD_GAIN = 1.0;
+const FLEX_MAX = 100.0;                     // wie in make_hand.py
+const ABD_MAX = 5.0;
+const ABD_GAIN = 4.0;
 const ABD_SIGN = [1, 1, 1, 1];            // pro Finger auf -1 setzen, falls Spreizen verkehrt herum läuft
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 

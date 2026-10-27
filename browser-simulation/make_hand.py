@@ -4,35 +4,48 @@ import pathlib
 # Name, x, y, Drehung um z (Grad), Länge proximal, Länge distal (Meter)
 # Reihenfolge wie die Servo-Paare der Amazing Hand: Index, Mittel, Ring, Daumen
 FINGERS = [
-    ('index',  -0.027,  0.045,  0, 0.045, 0.035),
-    ('middle',  0.000,  0.047,  0, 0.050, 0.038),
-    ('ring',    0.027,  0.045,  0, 0.046, 0.036),
-    ('thumb',  -0.045, -0.010, 55, 0.040, 0.032),
+    ('index',  -0.027,  0.045,  0, (0.032, 0.022, 0.018)),
+    ('middle',  0.000,  0.047,  0, (0.035, 0.025, 0.019)),
+    ('ring',    0.027,  0.045,  0, (0.032, 0.023, 0.018)),
+    ('thumb',  -0.045, -0.010, 55, (0.040, 0.032)),
 ]
-FLEX_MAX = 1.6   # rad, Grundgelenk
-ABD_MAX = 0.35   # rad, Spreizen (ca. 20 Grad)
-COUPLING = 0.9   # Endgelenk = 0.9 * Grundgelenk
+FLEX_MAX = 100.0   # rad, Grundgelenk
+ABD_MAX = 90.0   # rad, Spreizen (ca. 45 Grad)
+JOINTS = ['mcp', 'pip', 'dip']
+#COUPLING = 0.9   # Endgelenk = 0.9 * Grundgelenk
 
 
-def finger(name, x, y, yaw, l1, l2):
-    return f'''
-    <body name='{name}_prox' pos='{x} {y} 0' euler='0 0 {yaw}'>
-      <joint name='{name}_abd' axis='0 0 1' range='{-ABD_MAX} {ABD_MAX}'/>
-      <joint name='{name}_mcp' axis='-1 0 0' range='0 {FLEX_MAX}'/>
-      <geom type='capsule' fromto='0 0 0 0 {l1} 0' size='0.0085'/>
-      <body name='{name}_dist' pos='0 {l1} 0'>
-        <joint name='{name}_pip' axis='-1 0 0' range='0 1.5'/>
-        <geom type='capsule' fromto='0 0 0 0 {l2} 0' size='0.0075'/>
-      </body>
+def finger(name, x, y, yaw, lens):
+    xml = ''
+    for i in reversed(range(len(lens))):       # von der Spitze nach innen verschachteln
+        j = JOINTS[i]
+        l = lens[i]
+        if i == 0:
+            head = f"pos='{x} {y} 0' euler='0 0 {yaw}'"
+            abd = f"<joint name='{name}_abd' axis='0 0 1' range='{-ABD_MAX} {ABD_MAX}'/>"
+            rng = FLEX_MAX
+        else:
+            head = f"pos='0 {lens[i - 1]} 0'"
+            abd = ''
+            rng = 1.7
+        xml = f'''
+    <body name='{name}_{i}' {head}>
+      {abd}
+      <joint name='{name}_{j}' axis='-1 0 0' range='0 {rng}'/>
+      <geom type='capsule' fromto='0 0 0 0 {l} 0' size='{0.0085 - 0.0005 * i}'/>{xml}
     </body>'''
+    return xml
 
 
 bodies = ''.join(finger(*f) for f in FINGERS)
 
-equality = ''.join(
-    f'''
-    <joint joint1='{f[0]}_pip' joint2='{f[0]}_mcp' polycoef='0 {COUPLING} 0 0 0'/>'''
-    for f in FINGERS)
+equality = ''
+for name, _, _, _, lens in FINGERS:
+    # Dreigliedrig: pip = 1.0*mcp, dip = 0.67*pip. Daumen: pip = 0.9*mcp.
+    for j, parent, c in (('pip', 'mcp', 1.0 if len(lens) == 3 else 0.9), ('dip', 'pip', 0.67)):
+        if JOINTS.index(j) < len(lens):
+            equality += f'''
+    <joint joint1='{name}_{j}' joint2='{name}_{parent}' polycoef='0 {c} 0 0 0'/>'''
 
 # ctrl-Reihenfolge: je Finger erst Beugung, dann Abduktion -> 8 Werte
 actuators = ''.join(
