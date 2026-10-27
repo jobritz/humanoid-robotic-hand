@@ -5,73 +5,74 @@
     <geom contype='0' conaffinity='0' rgba='0.85 0.70 0.60 1'/>
     <position kp='0.5' kv='0.02'/>
   </default>
+  <asset>
+    <mesh name='palm_shell' file='meshes/R-Palm_Shell.stl' scale='0.001 0.001 0.001'/>
+    <mesh name='top_shell' file='meshes/R-Top_Shell.stl' scale='0.001 0.001 0.001'/>
+    <mesh name='hand_plate' file='meshes/R-Hand_Plate.stl' scale='0.001 0.001 0.001'/>
+    <mesh name='wrist_interface' file='meshes/R-Wrist_Interface.stl' scale='0.001 0.001 0.001'/>
+    <mesh name='proximal' file='meshes/Proximal.stl' scale='0.001 0.001 0.001'/>
+    <mesh name='proximal_shell' file='meshes/Proximal_Shell.stl' scale='0.001 0.001 0.001'/>
+    <mesh name='distal' file='meshes/Distal.stl' scale='0.001 0.001 0.001'/>
+    <mesh name='distal_shell' file='meshes/Distal_Shell.stl' scale='0.001 0.001 0.001'/>
+  </asset>
   <worldbody>
     <light pos='0 0 0.5'/>
-    <geom name='palm' type='box' size='0.045 0.045 0.010' rgba='0.30 0.35 0.45 1'/>
-    <body name='index_0' pos='-0.027 0.045 0' euler='0 0 0'>
+    <body name='hand' pos='0.03 0 0' euler='0 180 0'>
+    <geom name='palm_shell' type='mesh' mesh='palm_shell' rgba='0.30 0.35 0.45 1'/>
+    <geom name='top_shell' type='mesh' mesh='top_shell' rgba='0.38 0.43 0.54 1'/>
+    <geom name='hand_plate' type='mesh' mesh='hand_plate' rgba='0.22 0.26 0.34 1'/>
+    <geom name='wrist_interface' type='mesh' mesh='wrist_interface' rgba='0.26 0.30 0.38 1'/>
+    <body name='index_proximal' pos='0.002 -0.008 0.0' euler='0 0 0'>
       <joint name='index_abd' axis='0 0 1' range='-35.0 35.0'/>
       <joint name='index_mcp' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.032 0' size='0.0085'/>
-    <body name='index_1' pos='0 0.032 0'>
-      
-      <joint name='index_pip' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.022 0' size='0.008'/>
-    <body name='index_2' pos='0 0.022 0'>
-      
-      <joint name='index_dip' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.018 0' size='0.007500000000000001'/>
+      <geom name='index_proximal' type='mesh' mesh='proximal' rgba='0.82 0.61 0.46 1'/>
+      <geom name='index_proximal_shell' type='mesh' mesh='proximal_shell' rgba='0.84 0.70 0.59 1'/>
+      <body name='index_distal' pos='0 0.051 0'>
+        <joint name='index_pip' axis='-1 0 0' range='0 90.0'/>
+      <geom name='index_distal' type='mesh' mesh='distal' pos='0 -0.051 0' rgba='0.82 0.61 0.46 1'/>
+      <geom name='index_distal_shell' type='mesh' mesh='distal_shell' pos='0 -0.051 0' rgba='0.84 0.70 0.59 1'/>
+      </body>
     </body>
-    </body>
-    </body>
-    <body name='middle_0' pos='0.0 0.047 0' euler='0 0 0'>
+    <body name='middle_proximal' pos='0.033 -0.014 0.0' euler='0 0 0'>
       <joint name='middle_abd' axis='0 0 1' range='-35.0 35.0'/>
       <joint name='middle_mcp' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.035 0' size='0.0085'/>
-    <body name='middle_1' pos='0 0.035 0'>
-      
-      <joint name='middle_pip' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.025 0' size='0.008'/>
-    <body name='middle_2' pos='0 0.025 0'>
-      
-      <joint name='middle_dip' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.019 0' size='0.007500000000000001'/>
+      <geom name='middle_proximal' type='mesh' mesh='proximal' rgba='0.82 0.61 0.46 1'/>
+      <geom name='middle_proximal_shell' type='mesh' mesh='proximal_shell' rgba='0.84 0.70 0.59 1'/>
+      <body name='middle_distal' pos='0 0.051 0'>
+        <joint name='middle_pip' axis='-1 0 0' range='0 90.0'/>
+      <geom name='middle_distal' type='mesh' mesh='distal' pos='0 -0.051 0' rgba='0.82 0.61 0.46 1'/>
+      <geom name='middle_distal_shell' type='mesh' mesh='distal_shell' pos='0 -0.051 0' rgba='0.84 0.70 0.59 1'/>
+      </body>
     </body>
-    </body>
-    </body>
-    <body name='ring_0' pos='0.027 0.045 0' euler='0 0 0'>
+    <body name='ring_proximal' pos='0.065 -0.021 0.0' euler='0 0 0'>
       <joint name='ring_abd' axis='0 0 1' range='-35.0 35.0'/>
       <joint name='ring_mcp' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.032 0' size='0.0085'/>
-    <body name='ring_1' pos='0 0.032 0'>
-      
-      <joint name='ring_pip' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.023 0' size='0.008'/>
-    <body name='ring_2' pos='0 0.023 0'>
-      
-      <joint name='ring_dip' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.018 0' size='0.007500000000000001'/>
+      <geom name='ring_proximal' type='mesh' mesh='proximal' rgba='0.82 0.61 0.46 1'/>
+      <geom name='ring_proximal_shell' type='mesh' mesh='proximal_shell' rgba='0.84 0.70 0.59 1'/>
+      <body name='ring_distal' pos='0 0.051 0'>
+        <joint name='ring_pip' axis='-1 0 0' range='0 90.0'/>
+      <geom name='ring_distal' type='mesh' mesh='distal' pos='0 -0.051 0' rgba='0.82 0.61 0.46 1'/>
+      <geom name='ring_distal_shell' type='mesh' mesh='distal_shell' pos='0 -0.051 0' rgba='0.84 0.70 0.59 1'/>
+      </body>
     </body>
-    </body>
-    </body>
-    <body name='thumb_0' pos='-0.045 -0.01 0' euler='0 0 55'>
+    <body name='thumb_proximal' pos='0.0 -0.075 -0.03' euler='0 0 90'>
       <joint name='thumb_abd' axis='0 0 1' range='-35.0 35.0'/>
       <joint name='thumb_mcp' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.04 0' size='0.0085'/>
-    <body name='thumb_1' pos='0 0.04 0'>
-      
-      <joint name='thumb_pip' axis='-1 0 0' range='0 90.0'/>
-      <geom type='capsule' fromto='0 0 0 0 0.032 0' size='0.008'/>
+      <geom name='thumb_proximal' type='mesh' mesh='proximal' rgba='0.82 0.61 0.46 1'/>
+      <geom name='thumb_proximal_shell' type='mesh' mesh='proximal_shell' rgba='0.84 0.70 0.59 1'/>
+      <body name='thumb_distal' pos='0 0.051 0'>
+        <joint name='thumb_pip' axis='-1 0 0' range='0 90.0'/>
+      <geom name='thumb_distal' type='mesh' mesh='distal' pos='0 -0.051 0' rgba='0.82 0.61 0.46 1'/>
+      <geom name='thumb_distal_shell' type='mesh' mesh='distal_shell' pos='0 -0.051 0' rgba='0.84 0.70 0.59 1'/>
+      </body>
     </body>
     </body>
   </worldbody>
   <equality>
     <joint joint1='index_pip' joint2='index_mcp' polycoef='0 1.0 0 0 0'/>
-    <joint joint1='index_dip' joint2='index_pip' polycoef='0 0.67 0 0 0'/>
     <joint joint1='middle_pip' joint2='middle_mcp' polycoef='0 1.0 0 0 0'/>
-    <joint joint1='middle_dip' joint2='middle_pip' polycoef='0 0.67 0 0 0'/>
     <joint joint1='ring_pip' joint2='ring_mcp' polycoef='0 1.0 0 0 0'/>
-    <joint joint1='ring_dip' joint2='ring_pip' polycoef='0 0.67 0 0 0'/>
-    <joint joint1='thumb_pip' joint2='thumb_mcp' polycoef='0 0.9 0 0 0'/>
+    <joint joint1='thumb_pip' joint2='thumb_mcp' polycoef='0 1.0 0 0 0'/>
   </equality>
   <actuator>
     <position name='index_flex' joint='index_mcp' ctrlrange='0 90.0'/>

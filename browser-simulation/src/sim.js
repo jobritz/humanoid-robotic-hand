@@ -3,10 +3,37 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const DT = 0.002; // gleich wie <option timestep> in hand.xml
+const MESH_FILES = [
+  'R-Palm_Shell.stl',
+  'R-Top_Shell.stl',
+  'R-Hand_Plate.stl',
+  'R-Wrist_Interface.stl',
+  'Proximal.stl',
+  'Proximal_Shell.stl',
+  'Distal.stl',
+  'Distal_Shell.stl',
+];
 
 export async function createSim(canvas) {
   const mujoco = await loadMujoco();
-  const xml = await (await fetch('/hand.xml')).text();
+  const [xmlResponse, ...meshResponses] = await Promise.all([
+    fetch('/hand.xml'),
+    ...MESH_FILES.map((file) => fetch(`/meshes/${file}`)),
+  ]);
+  if (!xmlResponse.ok) throw new Error(`Could not load /hand.xml: ${xmlResponse.status}`);
+  for (let i = 0; i < meshResponses.length; i++) {
+    if (!meshResponses[i].ok) {
+      throw new Error(`Could not load /meshes/${MESH_FILES[i]}: ${meshResponses[i].status}`);
+    }
+  }
+
+  mujoco.FS.mkdirTree('/meshes');
+  const meshData = await Promise.all(meshResponses.map((response) => response.arrayBuffer()));
+  for (let i = 0; i < MESH_FILES.length; i++) {
+    mujoco.FS.writeFile(`/meshes/${MESH_FILES[i]}`, new Uint8Array(meshData[i]));
+  }
+  mujoco.FS.chdir('/');
+  const xml = await xmlResponse.text();
   const model = mujoco.MjModel.from_xml_string(xml);
   const data = new mujoco.MjData(model);
   mujoco.mj_forward(model, data);
@@ -17,10 +44,10 @@ export async function createSim(canvas) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x15181d);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10);
-  camera.up.set(0, 0, 1);
-  camera.position.set(0.30, 0.05, 0.02); // Seitenansicht: die Krümmung nach unten ist gut zu sehen
+  camera.up.set(0, 1, 0);
+  camera.position.set(0.03, -0.02, 0.30);
   const controls = new OrbitControls(camera, canvas);
-  controls.target.set(0, 0.05, -0.02);
+  controls.target.set(0.03, -0.02, 0);
   controls.update();
   scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.2));
   const sun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -31,8 +58,9 @@ export async function createSim(canvas) {
   grid.position.z = -0.09;
   scene.add(grid);
 
-  // ein Mesh pro MuJoCo-Geom (Kugel, Kapsel, Box)
+  // ein Three.js-Mesh pro MuJoCo-Geom
   const meshes = [];
+  const meshGeometries = new Map();
   for (let i = 0; i < model.ngeom; i++) {
     const type = model.geom_type[i];
     const s = [model.geom_size[3 * i], model.geom_size[3 * i + 1], model.geom_size[3 * i + 2]];
@@ -42,6 +70,24 @@ export async function createSim(canvas) {
       geo = new THREE.CapsuleGeometry(s[0], 2 * s[1], 8, 16);
       geo.rotateX(Math.PI / 2); // three: Achse y, MuJoCo: Achse z
     } else if (type === 6) geo = new THREE.BoxGeometry(2 * s[0], 2 * s[1], 2 * s[2]);
+    else if (type === 7) {
+      const meshId = model.geom_dataid[i];
+      geo = meshGeometries.get(meshId);
+      if (!geo) {
+        const vertexStart = 3 * model.mesh_vertadr[meshId];
+        const vertexEnd = vertexStart + 3 * model.mesh_vertnum[meshId];
+        const faceStart = 3 * model.mesh_faceadr[meshId];
+        const faceEnd = faceStart + 3 * model.mesh_facenum[meshId];
+        geo = new THREE.BufferGeometry();
+        geo.setAttribute(
+          'position',
+          new THREE.Float32BufferAttribute(model.mesh_vert.slice(vertexStart, vertexEnd), 3),
+        );
+        geo.setIndex(new THREE.Uint32BufferAttribute(model.mesh_face.slice(faceStart, faceEnd), 1));
+        geo.computeVertexNormals();
+        meshGeometries.set(meshId, geo);
+      }
+    }
     if (!geo) { meshes.push(null); continue; }
     const color = new THREE.Color(model.geom_rgba[4 * i], model.geom_rgba[4 * i + 1], model.geom_rgba[4 * i + 2]);
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color }));
