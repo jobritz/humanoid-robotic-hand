@@ -9,8 +9,8 @@ FINGERS = [
     ('ring',    0.027,  0.045,  0, (0.032, 0.023, 0.018)),
     ('thumb',  -0.045, -0.010, 55, (0.040, 0.032)),
 ]
-FLEX_MAX = 100.0   # rad, Grundgelenk
-ABD_MAX = 90.0   # rad, Spreizen (ca. 45 Grad)
+FLEX_MAX = 45.0   # degree, Grundgelenk
+ABD_MAX = 35.0   # degree, Spreizen
 JOINTS = ['mcp', 'pip', 'dip']
 #COUPLING = 0.9   # Endgelenk = 0.9 * Grundgelenk
 
