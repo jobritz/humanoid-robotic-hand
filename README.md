@@ -100,6 +100,8 @@ python make_hand.py
 ```
 
 This writes the model file used by the browser app at [browser-simulation/public/hand.xml](browser-simulation/public/hand.xml).
+The right-hand palm assembly uses `R-Palm_Shell.stl`, `R-Top_Shell.stl`, `R-Hand_Plate.stl`, and `R-Wrist_Interface.stl`; each finger uses the CAD core and shell meshes `Proximal.stl`, `Proximal_Shell.stl`, `Distal.stl`, and `Distal_Shell.stl`. Keep these files in `browser-simulation/public/meshes/` so MuJoCo can load them.
+The hand is mounted with a 180-degree roll around its longitudinal axis so the palm faces up; the browser camera starts above the palm.
 
 ## Project structure
 
