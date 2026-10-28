@@ -1,8 +1,7 @@
 import { HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
-const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const WASM_URL = '/mediapipe/wasm';
+const MODEL_URL = '/mediapipe/hand_landmarker.task';
 
 export async function createTracker(video) {
   const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
