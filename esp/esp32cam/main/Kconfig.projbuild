@@ -1,0 +1,8 @@
+menu "ESP32-CAM Web Server"
+    config CAM_WIFI_SSID
+        string "Wi-Fi SSID"
+        default "YOUR_WIFI_SSID"
+    config CAM_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default "YOUR_WIFI_PASSWORD"
+endmenu

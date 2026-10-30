@@ -222,3 +222,4 @@ __marimo__/
 # ESP
 v6.1/
 eim_config.toml
+wifi_config.h
