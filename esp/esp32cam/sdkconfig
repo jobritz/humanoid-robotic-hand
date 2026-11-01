@@ -717,15 +717,6 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# ESP32-CAM Web Server
-#
-# default:
-CONFIG_CAM_WIFI_SSID="YOUR_WIFI_SSID"
-# default:
-CONFIG_CAM_WIFI_PASSWORD="YOUR_WIFI_PASSWORD"
-# end of ESP32-CAM Web Server
-
-#
 # Compiler options
 #
 # default:
