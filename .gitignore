@@ -223,3 +223,5 @@ __marimo__/
 v6.1/
 eim_config.toml
 wifi_config.h
+sdkconfig.old
+/esp/esp32cam/managed_components/
