@@ -166,9 +166,9 @@ void app_main(void)
         .xclk_freq_hz = 20000000,
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
-        .pixel_format = PIXFORMAT_JPEG,
-        .frame_size = FRAMESIZE_QVGA,
-        .jpeg_quality = 12,
+        .pixel_format = PIXFORMAT_JPEG, // PIXFORMAT_ + YUV422|GRAYSCALE|RGB565|JPEG
+        .frame_size = FRAMESIZE_QVGA, // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+        .jpeg_quality = 12, // Quality of JPEG output. 0-63 lower means higher quality
         .fb_count = 2,
         .grab_mode = CAMERA_GRAB_LATEST,
         .fb_location = CAMERA_FB_IN_PSRAM,
