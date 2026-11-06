@@ -1,0 +1,6 @@
+{
+    "idf.currentSetup": "${workspaceFolder}/esp/v6.1/esp-idf",
+    "C_Cpp.errorSquiggles": "disabled",
+    "cmake.sourceDirectory": "C:/Users/Jonas Britz/Git/humanoid-robotic-hand/esp/esp32cam",
+    "cmake.autoDetectSourceDirectory": false
+}
