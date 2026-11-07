@@ -1,0 +1,16 @@
+<mujoco model="so101_amazing_hand_grasp">
+  <!-- Greiftest: Flasche (Zylinder) auf einem Tisch neben der Handfläche.
+       Startpose als Keyframe "grasp_ready": wrist_roll = -90°, Handfläche zeigt zur Flasche. -->
+  <include file="scene.xml"/>
+  <worldbody>
+    <geom name="table" type="box" size="0.07 0.07 0.079" pos="0.40 0.06 0.079" rgba="0.55 0.45 0.35 1"/>
+    <body name="bottle" pos="0.40 0.046 0.229">
+      <freejoint name="bottle"/>
+      <geom name="bottle" type="cylinder" size="0.022 0.07" mass="0.05" rgba="0.2 0.5 0.85 1"
+            friction="1.0 0.01 0.0001" condim="4"/>
+    </body>
+  </worldbody>
+  <keyframe>
+    <key name="grasp_ready" qpos="{QPOS}" ctrl="{CTRL}"/>
+  </keyframe>
+</mujoco>
