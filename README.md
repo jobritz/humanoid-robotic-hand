@@ -1,6 +1,5 @@
 # SO-101 + Amazing Hand – MuJoCo-Modell
 
-LeRobot **SO-101** (Follower-Arm) mit der **Amazing Hand (rechts)** von Pollen Robotics statt des Greifers.
 Die Hand sitzt über den offiziellen Adapter `SO-ARM_Interface` auf dem Horn des Wrist-Roll-Servos, genau wie
 beim realen Umbau.
 
