@@ -224,4 +224,10 @@ v6.1/
 eim_config.toml
 wifi_config.h
 sdkconfig.old
-/esp/esp32cam/managed_components/
+*.DS_Store
+.vscode
+**/build
+**/sdkconfig
+**/sdkconfig.old
+**/dependencies.lock
+**/managed_components/**
