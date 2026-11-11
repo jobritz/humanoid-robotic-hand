@@ -31,7 +31,7 @@ body {
   flex-direction: column;
   gap: 4px;
   height: 100vh;
-  overflow: hidden;
+  overflow-y: auto; /* auf niedrigen Bildschirmen scrollt das ganze Panel */
   background: var(--panel);
   border-right: 1px solid var(--border);
   padding: 16px;
@@ -61,7 +61,7 @@ section {
 }
 section.grow {
   flex: 1;
-  min-height: 0;
+  min-height: 200px; /* Platz für mindestens drei Slider */
   display: flex;
   flex-direction: column;
 }
@@ -130,8 +130,36 @@ button:disabled { opacity: 0.4; cursor: default; border-color: var(--border); }
 }
 #drop-overlay[hidden] { display: none; }
 
+/* Kleine Kameravorschau unten rechts; Video und Landmarken-Canvas liegen deckungsgleich übereinander. */
+#camera-preview {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 240px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #000;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.45);
+}
+/* Wie ein Spiegel anzeigen. Die Erkennung arbeitet auf dem ungespiegelten Bild. */
+#camera-preview video,
+#camera-preview canvas {
+  display: block;
+  width: 100%;
+  transform: scaleX(-1);
+}
+#camera-preview video { aspect-ratio: auto 4 / 3; }
+#camera-preview canvas {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  pointer-events: none;
+}
+
 @media (max-width: 800px) {
   body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
   #panel { height: auto; order: 2; border-right: 0; }
   #viewport { height: 55vh; }
+  #camera-preview { width: 160px; }
 }

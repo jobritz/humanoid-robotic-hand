@@ -1,4 +1,5 @@
-// Einstiegspunkt der Web-Oberfläche: Modell laden, Simulation laufen lassen, Gelenke/Aktuatoren steuern.
+// Einstiegspunkt der Web-Oberfläche: Modell laden, Simulation laufen lassen, Gelenke/Aktuatoren steuern,
+// Hand per Kamera erkennen.
 import { Renderer } from './renderer.js';
 import {
   getMujoco,
@@ -8,6 +9,7 @@ import {
   readLocalFiles,
   findEntryCandidates,
 } from './mujoco.js';
+import { HandTracker, drawHand } from './handTracking.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -26,6 +28,11 @@ const ui = {
   viewport: $('viewport'),
   status: $('status'),
   dropOverlay: $('drop-overlay'),
+  cameraToggle: $('camera-toggle'),
+  cameraInfo: $('camera-info'),
+  cameraPreview: $('camera-preview'),
+  cameraVideo: $('camera-video'),
+  cameraOverlay: $('camera-overlay'),
 };
 
 const JOINT = { FREE: 0, BALL: 1, SLIDE: 2, HINGE: 3 };
@@ -42,6 +49,7 @@ const state = {
   simStartWall: 0,
   simStartTime: 0,
   sliders: [], // { input, output, apply(value), read() }
+  hand: null, // letztes Ergebnis des Hand-Trackings (siehe handTracking.js)
 };
 
 // ---------------------------------------------------------------------------
@@ -284,6 +292,68 @@ function setStatus(text) {
 }
 
 // ---------------------------------------------------------------------------
+// Kamera & Hand-Tracking
+// ---------------------------------------------------------------------------
+
+const CAMERA_IDLE_TEXT = ui.cameraInfo.textContent;
+const HANDEDNESS = { Left: 'Linke', Right: 'Rechte' };
+
+const tracker = new HandTracker(ui.cameraVideo, {
+  onResult(hand) {
+    // Hier kann später die Abbildung der Landmarken auf die Gelenke ansetzen (z. B. window.sim.setJoints).
+    state.hand = hand;
+    drawHand(ui.cameraOverlay, hand);
+    const rate = `${tracker.fps.toFixed(0)} FPS (${tracker.delegate})`;
+    setCameraInfo(
+      hand
+        ? `${HANDEDNESS[hand.handedness] ?? hand.handedness} Hand erkannt (${Math.round(hand.score * 100)} %) · ${rate}`
+        : `Keine Hand im Bild · ${rate}`,
+    );
+  },
+  onError(err) {
+    console.error(err);
+    setCameraActive(false);
+    setCameraInfo(err.message, true);
+  },
+});
+
+async function toggleCamera() {
+  if (tracker.running) {
+    tracker.stop();
+    setCameraActive(false);
+    setCameraInfo(CAMERA_IDLE_TEXT);
+    return;
+  }
+  ui.cameraToggle.disabled = true;
+  ui.cameraPreview.hidden = false;
+  setCameraInfo('Kamera und Handmodell werden geladen…');
+  try {
+    await tracker.start();
+    setCameraActive(true);
+  } catch (err) {
+    console.error(err);
+    setCameraActive(false);
+    setCameraInfo(err.message, true);
+  } finally {
+    ui.cameraToggle.disabled = false;
+  }
+}
+
+function setCameraActive(active) {
+  ui.cameraToggle.textContent = active ? 'Kamera beenden' : 'Kamera aktivieren';
+  ui.cameraPreview.hidden = !active;
+  if (!active) {
+    state.hand = null;
+    drawHand(ui.cameraOverlay, null);
+  }
+}
+
+function setCameraInfo(text, isError = false) {
+  ui.cameraInfo.textContent = text;
+  ui.cameraInfo.classList.toggle('error', isError);
+}
+
+// ---------------------------------------------------------------------------
 // Ereignisse
 // ---------------------------------------------------------------------------
 
@@ -298,6 +368,7 @@ ui.reset.addEventListener('click', () => {
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', () => setMode(r.value)),
 );
+ui.cameraToggle.addEventListener('click', toggleCamera);
 
 ui.modelSelect.addEventListener('change', () => {
   if (ui.modelSelect.value) guarded(() => loadServed(ui.modelSelect.value));
@@ -339,6 +410,8 @@ window.sim = {
   get model() { return state.model; },
   get data() { return state.data; },
   get mujoco() { return state.mujoco; },
+  /** Zuletzt erkannte Hand der Kamera ({ landmarks, worldLandmarks, handedness, score }) oder null. */
+  get hand() { return state.hand; },
   /** Setzt Gelenkwinkel (rad bzw. m) nach Name und aktualisiert die Kinematik. */
   setJoints(values) {
     const { mujoco, model, data } = state;

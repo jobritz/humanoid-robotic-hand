@@ -41,6 +41,14 @@
         <p id="sim-info" class="info"></p>
       </section>
 
+      <section>
+        <h2>Kamera &amp; Hand-Tracking</h2>
+        <div class="row">
+          <button id="camera-toggle">Kamera aktivieren</button>
+        </div>
+        <p id="camera-info" class="info">Erkennt die eigene Hand live (MediaPipe).</p>
+      </section>
+
       <section class="grow">
         <h2 id="controls-title">Steuerung</h2>
         <div id="controls"></div>
@@ -55,6 +63,10 @@
     <main id="viewport">
       <div id="status" class="status">MuJoCo wird geladen…</div>
       <div id="drop-overlay" hidden>Modellordner hier ablegen</div>
+      <div id="camera-preview" hidden>
+        <video id="camera-video" autoplay muted playsinline></video>
+        <canvas id="camera-overlay"></canvas>
+      </div>
     </main>
 
     <script type="module" src="/src/main.js"></script>
