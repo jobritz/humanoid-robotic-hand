@@ -373,9 +373,10 @@ guarded(async () => {
     new Option('– auswählen –', ''),
     ...state.served.map((m) => new Option(m.folder, m.folder)),
   );
-  // Startmodell: ?model=<ordner> in der URL, sonst demo_hand.
-  const wanted = new URLSearchParams(location.search).get('model') ?? 'demo_hand';
-  const initial = state.served.find((m) => m.folder === wanted) ?? state.served[0];
+  // Startmodell: ?model=<ordner> in der URL, sonst die Amazing Hand, sonst demo_hand.
+  const wanted = [new URLSearchParams(location.search).get('model'), 'amazing_hand', 'demo_hand'];
+  const initial =
+    wanted.map((f) => state.served.find((m) => m.folder === f)).find(Boolean) ?? state.served[0];
   if (initial) {
     ui.modelSelect.value = initial.folder;
     await loadServed(initial.folder);
