@@ -1,0 +1,29 @@
+name: ESP32-CAM Build
+
+on:
+  push:
+    paths:
+      - "esp/esp32cam/**"
+      - ".github/workflows/esp32cam-build.yml"
+  pull_request:
+    paths:
+      - "esp/esp32cam/**"
+      - ".github/workflows/esp32cam-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build ESP32-CAM project
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v6.1
+          target: esp32
+          path: esp/esp32cam
