@@ -15,17 +15,34 @@ npm install
 npm run dev        # Dev-Server auf http://localhost:5173
 ```
 
+Unter Windows blockiert PowerShell `npm` eventuell („npm.ps1 ist nicht digital signiert“). Dann `npm.cmd install` bzw.
+`npm.cmd run dev` verwenden.
+
 Statischer Build (z. B. zum Hosten): `npm run build` → Ordner `dist/`, lokal testen mit `npm run preview`.
 
 ## Modelle laden
 
 - **Mitgelieferte Modelle:** Jeder Ordner unter `public/models/` erscheint automatisch in der Auswahl.
   Einfach den kompletten Modellordner (XML + `meshes/`/`assets/`) dorthin kopieren.
-  Mit `?model=<ordner>` in der URL wird ein Modell direkt beim Start geladen.
+  Mit `?model=<ordner>` in der URL wird ein bestimmtes Modell beim Start geladen (Standard: `amazing_hand`).
 - **Lokale Dateien:** „Ordner öffnen…“ oder einen Ordner per Drag & Drop auf die 3D-Ansicht ziehen.
 - Enthält ein Ordner mehrere Szenen, kann die Haupt-XML über „Szene“ gewählt werden (`scene.xml` wird bevorzugt).
 
-`public/models/demo_hand/` ist ein einfaches Platzhalter-Modell (nur Primitive), bis das MJCF-Modell der Amazing Hand eingebunden ist.
+Mitgelieferte Modelle:
+
+| Ordner | Inhalt |
+| --- | --- |
+| `amazing_hand/` | Modell der Amazing Hand (rechte Hand, `hand.xml` + STL-Meshes), wird standardmäßig geladen. Übernommen aus dem Branch `test-jonasb` (erzeugt mit `make_hand.py`). |
+| `demo_hand/` | Einfaches Testmodell aus Grundformen, ohne Meshes. |
+
+### Amazing Hand (`amazing_hand/hand.xml`)
+
+- 4 Finger (Zeige-, Mittel-, Ringfinger, Daumen) mit je 3 Gelenken: Spreizung (`*_abd`, ±35°), Grundgelenk (`*_mcp`, 0–90°)
+  und Mittelgelenk (`*_pip`, 0–90°). Das Mittelgelenk ist per `<equality>` an das Grundgelenk gekoppelt.
+- 8 Positions-Aktuatoren: `*_flex` (Beugung) und `*_abd` (Spreizung) pro Finger.
+- Hinweis: Die `ctrlrange` der Aktuatoren steht in Grad (`0 90` bzw. `-35 35`), MuJoCo rechnet sie aber nicht in Radiant
+  um. Sinnvolle Sollwerte liegen daher bei 0–1,57 rad (Beugung) bzw. ±0,61 rad (Spreizung). Die Slider sind nur im
+  vorderen Bereich wirksam.
 
 ## Bedienung
 
@@ -41,8 +58,8 @@ Statischer Build (z. B. zum Hosten): `npm run build` → Ordner `dist/`, lokal t
 Für die spätere Anbindung (z. B. Finger-Posenschätzung) gibt es im Browser das Objekt `window.sim`:
 
 ```js
-window.sim.setJoints({ index_mcp: 0.8, index_pip: 1.1 }); // Gelenkwinkel in rad (Kinematik-Modus)
-window.sim.setControls({ index_mcp: 0.8 });               // Aktuator-Sollwerte (Physik-Modus)
+window.sim.setControls({ index_flex: 0.8, thumb_abd: 0.3 }); // Aktuator-Sollwerte in rad (Physik-Modus)
+window.sim.setJoints({ index_mcp: 0.8, index_pip: 0.8 });    // Gelenkwinkel in rad (Kinematik-Modus)
 window.sim.model / window.sim.data / window.sim.mujoco    // direkter Zugriff auf MuJoCo
 ```
 
