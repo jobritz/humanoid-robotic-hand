@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amazing Hand Simulation</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <aside id="panel">
+      <h1>Amazing Hand <span>MuJoCo-Simulation</span></h1>
+
+      <section>
+        <h2>Modell</h2>
+        <label>Mitgelieferte Modelle
+          <select id="model-select"></select>
+        </label>
+        <label id="entry-row" hidden>Szene
+          <select id="entry-select"></select>
+        </label>
+        <div class="row">
+          <button id="open-folder">Ordner öffnen…</button>
+          <button id="open-files">Dateien öffnen…</button>
+        </div>
+        <input id="folder-input" type="file" webkitdirectory hidden />
+        <input id="files-input" type="file" multiple accept=".xml,.stl,.obj,.msh,.png" hidden />
+        <p class="hint">Oder einen Modellordner (XML + Meshes) auf die Ansicht ziehen.</p>
+        <p id="model-info" class="info"></p>
+      </section>
+
+      <section>
+        <h2>Simulation</h2>
+        <div class="row">
+          <button id="play" class="primary">Pause</button>
+          <button id="reset">Zurücksetzen</button>
+        </div>
+        <div class="segmented" role="radiogroup" aria-label="Modus">
+          <label><input type="radio" name="mode" value="physics" checked /> Physik (Aktuatoren)</label>
+          <label><input type="radio" name="mode" value="kinematic" /> Kinematik (Gelenke)</label>
+        </div>
+        <p id="sim-info" class="info"></p>
+      </section>
+
+      <section class="grow">
+        <h2 id="controls-title">Steuerung</h2>
+        <div id="controls"></div>
+      </section>
+
+      <section>
+        <h2>Geom-Gruppen</h2>
+        <div id="groups" class="groups"></div>
+      </section>
+    </aside>
+
+    <main id="viewport">
+      <div id="status" class="status">MuJoCo wird geladen…</div>
+      <div id="drop-overlay" hidden>Modellordner hier ablegen</div>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
