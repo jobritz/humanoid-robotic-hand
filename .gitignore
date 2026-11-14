@@ -220,3 +220,16 @@ __marimo__/
 .streamlit/secrets.toml
 .DS_Store
 *.FCBak
+
+# ESP
+v6.1/
+eim_config.toml
+wifi_config.h
+sdkconfig.old
+*.DS_Store
+.vscode
+**/build
+**/sdkconfig
+**/sdkconfig.old
+**/dependencies.lock
+**/managed_components/**
