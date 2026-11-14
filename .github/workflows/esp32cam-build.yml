@@ -21,6 +21,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Create Wi-Fi config for build
+        run: cp esp/esp32cam/main/wifi_config.h.example esp/esp32cam/main/wifi_config.h
+
       - name: Build ESP32-CAM project
         uses: espressif/esp-idf-ci-action@v1
         with:
