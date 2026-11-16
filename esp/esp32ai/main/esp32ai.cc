@@ -4,8 +4,6 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_heap_caps.h"
-#include "esp_timer.h"
-#include <cmath>
 #include <stdint.h>
 #include <stdio.h>
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
@@ -33,46 +31,17 @@
 
 static const char *TAG = "esp32ai";
 
-constexpr size_t kArena = 512 * 1024; // 512 KB Tensor Arena in PSRAM
-const int kInputWidth = 320;
-const int kInputHeight = 240;
-constexpr int kInputSize = kInputWidth * kInputHeight; // Input size of the model
+constexpr size_t kArena = 32 * 1024; // 32 KB Tensor Arena in PSRAM
+constexpr int kInputWidth = 80;
+constexpr int kInputHeight = 60;
+constexpr size_t kInputSize = kInputWidth * kInputHeight;
 
-constexpr uint32_t kTimingReportInterval = 50;
-
-struct StageStats {
-    uint64_t total_us = 0;
-    uint64_t max_us = 0;
-    uint32_t samples = 0;
-};
-
-static void record_stage(StageStats &stats, uint64_t duration_us)
-{
-    stats.total_us += duration_us;
-    if (duration_us > stats.max_us) {
-        stats.max_us = duration_us;
-    }
-    stats.samples++;
-}
-
-static void log_stage(const char *name, const StageStats &stats)
-{
-    if (stats.samples == 0) {
-        ESP_LOGI(TAG, "%s: no samples", name);
-        return;
-    }
-
-    ESP_LOGI(TAG, "%s: avg=%llu us, max=%llu us, n=%u",
-             name,
-             static_cast<unsigned long long>(stats.total_us / stats.samples),
-             static_cast<unsigned long long>(stats.max_us),
-             static_cast<unsigned>(stats.samples));
-}
-
+// Log the tensor's name, type, shape, number of bytes, scale, and zero point.
 static void log_tensor(const char *name, const TfLiteTensor *tensor)
 {
     char shape[64] = {};
     size_t used = 0;
+
     if (tensor->dims != nullptr) {
         for (int i = 0; i < tensor->dims->size; i++) {
             const int written = snprintf(shape + used, sizeof(shape) - used,
@@ -85,23 +54,57 @@ static void log_tensor(const char *name, const TfLiteTensor *tensor)
         }
     }
 
-    ESP_LOGI(TAG, "%s: type=%d shape=[%s] bytes=%u scale=%.9g zero_point=%d",
+    ESP_LOGI(TAG, "%s: type=%d shape=[%s] bytes=%u scale=%g zero_point=%d",
              name, static_cast<int>(tensor->type), shape,
              static_cast<unsigned>(tensor->bytes), tensor->params.scale,
              tensor->params.zero_point);
 }
 
-static int8_t quantize_pixel(uint8_t pixel, const TfLiteTensor *input)
+// Preprocess the camera frame to fit the model's input tensor.
+static bool preprocess_frame(const camera_fb_t *frame, TfLiteTensor *input)
 {
-    const float quantized = static_cast<float>(pixel) / input->params.scale +
-                            input->params.zero_point;
-    if (quantized <= -128.0f) {
-        return INT8_MIN;
+    if (frame->format != PIXFORMAT_GRAYSCALE || frame->buf == nullptr ||
+        frame->width == 0 || frame->height == 0 ||
+        frame->len != static_cast<size_t>(frame->width) * frame->height) {
+        return false;
     }
-    if (quantized >= 127.0f) {
-        return INT8_MAX;
+
+    int cropWidth = frame->width;
+    int cropHeight = frame->height;
+    if (cropWidth * kInputHeight > cropHeight * kInputWidth) {
+        cropWidth = cropHeight * kInputWidth / kInputHeight;
+    } else {
+        cropHeight = cropWidth * kInputHeight / kInputWidth;
     }
-    return static_cast<int8_t>(std::lround(quantized));
+
+    if (cropWidth < kInputWidth || cropHeight < kInputHeight) {
+        return false;
+    }
+
+    const int cropX = (frame->width - cropWidth) / 2;
+    const int cropY = (frame->height - cropHeight) / 2;
+    for (int y = 0; y < kInputHeight; y++) {
+        const int sourceYStart = cropY + y * cropHeight / kInputHeight;
+        const int sourceYEnd = cropY + (y + 1) * cropHeight / kInputHeight;
+        for (int x = 0; x < kInputWidth; x++) {
+            const int sourceXStart = cropX + x * cropWidth / kInputWidth;
+            const int sourceXEnd = cropX + (x + 1) * cropWidth / kInputWidth;
+            uint32_t sum = 0;
+            uint32_t pixelCount = 0;
+            for (int sourceY = sourceYStart; sourceY < sourceYEnd; sourceY++) {
+                const uint8_t *row = frame->buf + sourceY * frame->width;
+                for (int sourceX = sourceXStart; sourceX < sourceXEnd; sourceX++) {
+                    sum += row[sourceX];
+                    pixelCount++;
+                }
+            }
+
+            const int8_t pixel = static_cast<int8_t>(
+                static_cast<int>(sum / pixelCount) - 128);
+            input->data.int8[y * kInputWidth + x] = pixel;
+        }
+    }
+    return true;
 }
 
 static void run_model(void)
@@ -134,126 +137,66 @@ static void run_model(void)
         return;
     }
 
+    // log the tensor arena usage
+    const size_t used = interpreter.arena_used_bytes();
+    ESP_LOGI(TAG, "Tensor Arena: %u Bytes (%u%% usage)", 
+        static_cast<unsigned>(used), 
+        static_cast<unsigned>((used * 100) / kArena));
+
     // Get pointers to the model's input and output tensors
     TfLiteTensor *in  = interpreter.input(0);
     TfLiteTensor *out = interpreter.output(0);
-    if (in == nullptr || out == nullptr) {
-        ESP_LOGE(TAG, "Model input or output tensor is unavailable");
+
+    // check that the input tensor has the expected type and shape
+    if (in == nullptr || out == nullptr || in->type != kTfLiteInt8 ||
+        in->dims == nullptr || in->dims->size != 4 ||
+        in->dims->data[0] != 1 || in->dims->data[1] != kInputHeight ||
+        in->dims->data[2] != kInputWidth || in->dims->data[3] != 1 ||
+        in->bytes != kInputSize) {
+        ESP_LOGE(TAG, "Model input must be int8 with shape [1, %d, %d, 1]", kInputHeight, kInputWidth);
         return;
     }
+
+    // log the input and output tensors
     log_tensor("Input tensor", in);
     log_tensor("Output tensor", out);
-    if (in->type != kTfLiteInt8 || out->type != kTfLiteInt8 ||
-        in->bytes != kInputSize || !(in->params.scale > 0.0f) ||
-        !std::isfinite(in->params.scale) || !(out->params.scale > 0.0f) ||
-        !std::isfinite(out->params.scale)) {
-        ESP_LOGE(TAG, "Expected int8 input of %d bytes and int8 output with valid quantization", kInputSize);
-        return;
-    }
-
-    uint32_t attempts = 0;
-    uint32_t valid_frames = 0;
-    StageStats camera_stats;
-    StageStats validation_stats;
-    StageStats preprocessing_stats;
-    StageStats inference_stats;
-    StageStats output_stats;
-
-    const auto report_timings = [&]() {
-        if (attempts < kTimingReportInterval) {
-            return;
-        }
-        ESP_LOGI(TAG, "Timing window: %u attempts, %u valid frames",
-                 static_cast<unsigned>(attempts),
-                 static_cast<unsigned>(valid_frames));
-        log_stage("Camera wait", camera_stats);
-        log_stage("Frame validation", validation_stats);
-        log_stage("Input quantization/copy", preprocessing_stats);
-        log_stage("Inference", inference_stats);
-        log_stage("Output serial", output_stats);
-        attempts = 0;
-        valid_frames = 0;
-        camera_stats = {};
-        validation_stats = {};
-        preprocessing_stats = {};
-        inference_stats = {};
-        output_stats = {};
-    };
 
     // run the model
     while (true) {
-        attempts++;
-
         // Get the current image of the camera
-        const int64_t camera_start_us = esp_timer_get_time();
         camera_fb_t *fb = esp_camera_fb_get();
-        record_stage(camera_stats, static_cast<uint64_t>(esp_timer_get_time() - camera_start_us));
 
         // check camera image integrity
         if (fb == nullptr) {
             ESP_LOGW(TAG, "No camera frame received");
-            report_timings();
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
-        const int64_t validation_start_us = esp_timer_get_time();
-        const bool valid_frame = fb->format == PIXFORMAT_GRAYSCALE &&
-                                 fb->width == kInputWidth &&
-                                 fb->height == kInputHeight &&
-                                 fb->len == kInputSize;
-        record_stage(validation_stats,
-                     static_cast<uint64_t>(esp_timer_get_time() - validation_start_us));
-        if (!valid_frame) {
-            ESP_LOGE(TAG, "Unexpected Frame: %u Bytes, %ux%u, format %d", static_cast<unsigned>(fb->len), 
-                fb->width,
-                fb->height,
-                fb->format);
+        if (!preprocess_frame(fb, in)) {
+            ESP_LOGE(TAG, "Cannot preprocess frame: %u Bytes, %ux%u, format %d",
+                     static_cast<unsigned>(fb->len), fb->width, fb->height,
+                     fb->format);
             esp_camera_fb_return(fb);
-            report_timings();
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
 
-        // Quantize the grayscale pixels using the model's input tensor parameters.
-        const int64_t preprocessing_start_us = esp_timer_get_time();
-        if (in->params.scale == 1.0f && in->params.zero_point == -128) {
-            for (int i = 0; i < kInputSize; i++) {
-                in->data.int8[i] = static_cast<int8_t>(fb->buf[i] ^ 0x80);
-            }
-        } else {
-            for (int i = 0; i < kInputSize; i++) {
-                in->data.int8[i] = quantize_pixel(fb->buf[i], in);
-            }
-        }
         esp_camera_fb_return(fb);
-        record_stage(preprocessing_stats,
-                     static_cast<uint64_t>(esp_timer_get_time() - preprocessing_start_us));
 
         // Run the model on this input and make sure it succeeds.
-        const int64_t inference_start_us = esp_timer_get_time();
         if (kTfLiteOk != interpreter.Invoke()) {
-            record_stage(inference_stats,
-                         static_cast<uint64_t>(esp_timer_get_time() - inference_start_us));
             ESP_LOGE(TAG, "Invoke failed.");
-            report_timings();
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
-        record_stage(inference_stats,
-                     static_cast<uint64_t>(esp_timer_get_time() - inference_start_us));
 
-        // Dequantize the int8 output into the sigmoid probability range.
-        const int64_t output_start_us = esp_timer_get_time();
+        // Dequantize the int8 output into a probability-like value.
         for (size_t i = 0; i < out->bytes / sizeof(int8_t); i++) {
             const float probability =
                 (static_cast<int32_t>(out->data.int8[i]) - out->params.zero_point) *
                 out->params.scale;
             printf("Output[%u]: %.6f\n", static_cast<unsigned>(i), probability);
         }
-        record_stage(output_stats,
-                     static_cast<uint64_t>(esp_timer_get_time() - output_start_us));
-        valid_frames++;
-        report_timings();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
