@@ -4,6 +4,10 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include <cmath>
+#include <stdint.h>
+#include <stdio.h>
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/schema/schema_generated.h"
@@ -33,7 +37,72 @@ constexpr size_t kArena = 512 * 1024; // 512 KB Tensor Arena in PSRAM
 const int kInputWidth = 320;
 const int kInputHeight = 240;
 constexpr int kInputSize = kInputWidth * kInputHeight; // Input size of the model
-const int labels = 8;  // Number of output labels in the model
+
+constexpr uint32_t kTimingReportInterval = 50;
+
+struct StageStats {
+    uint64_t total_us = 0;
+    uint64_t max_us = 0;
+    uint32_t samples = 0;
+};
+
+static void record_stage(StageStats &stats, uint64_t duration_us)
+{
+    stats.total_us += duration_us;
+    if (duration_us > stats.max_us) {
+        stats.max_us = duration_us;
+    }
+    stats.samples++;
+}
+
+static void log_stage(const char *name, const StageStats &stats)
+{
+    if (stats.samples == 0) {
+        ESP_LOGI(TAG, "%s: no samples", name);
+        return;
+    }
+
+    ESP_LOGI(TAG, "%s: avg=%llu us, max=%llu us, n=%u",
+             name,
+             static_cast<unsigned long long>(stats.total_us / stats.samples),
+             static_cast<unsigned long long>(stats.max_us),
+             static_cast<unsigned>(stats.samples));
+}
+
+static void log_tensor(const char *name, const TfLiteTensor *tensor)
+{
+    char shape[64] = {};
+    size_t used = 0;
+    if (tensor->dims != nullptr) {
+        for (int i = 0; i < tensor->dims->size; i++) {
+            const int written = snprintf(shape + used, sizeof(shape) - used,
+                                         "%s%d", i == 0 ? "" : ",",
+                                         tensor->dims->data[i]);
+            if (written < 0 || static_cast<size_t>(written) >= sizeof(shape) - used) {
+                break;
+            }
+            used += static_cast<size_t>(written);
+        }
+    }
+
+    ESP_LOGI(TAG, "%s: type=%d shape=[%s] bytes=%u scale=%.9g zero_point=%d",
+             name, static_cast<int>(tensor->type), shape,
+             static_cast<unsigned>(tensor->bytes), tensor->params.scale,
+             tensor->params.zero_point);
+}
+
+static int8_t quantize_pixel(uint8_t pixel, const TfLiteTensor *input)
+{
+    const float quantized = static_cast<float>(pixel) / input->params.scale +
+                            input->params.zero_point;
+    if (quantized <= -128.0f) {
+        return INT8_MIN;
+    }
+    if (quantized >= 127.0f) {
+        return INT8_MAX;
+    }
+    return static_cast<int8_t>(std::lround(quantized));
+}
 
 static void run_model(void)
 {
@@ -59,48 +128,133 @@ static void run_model(void)
     }
 
     // create a MicroInterpreter object to run the model
-    static tflite::MicroInterpreter interp(model, resolver, arena, kArena);
-    if (interp.AllocateTensors() != kTfLiteOk) {
+    static tflite::MicroInterpreter interpreter(model, resolver, arena, kArena);
+    if (interpreter.AllocateTensors() != kTfLiteOk) {
         ESP_LOGE(TAG, "Tensor allocation failed; model needs more than %u bytes of arena", (unsigned)kArena);
         return;
     }
 
     // Get pointers to the model's input and output tensors
-    TfLiteTensor *in  = interp.input(0);
-    TfLiteTensor *out = interp.output(0);
+    TfLiteTensor *in  = interpreter.input(0);
+    TfLiteTensor *out = interpreter.output(0);
+    if (in == nullptr || out == nullptr) {
+        ESP_LOGE(TAG, "Model input or output tensor is unavailable");
+        return;
+    }
+    log_tensor("Input tensor", in);
+    log_tensor("Output tensor", out);
+    if (in->type != kTfLiteInt8 || out->type != kTfLiteInt8 ||
+        in->bytes != kInputSize || !(in->params.scale > 0.0f) ||
+        !std::isfinite(in->params.scale) || !(out->params.scale > 0.0f) ||
+        !std::isfinite(out->params.scale)) {
+        ESP_LOGE(TAG, "Expected int8 input of %d bytes and int8 output with valid quantization", kInputSize);
+        return;
+    }
+
+    uint32_t attempts = 0;
+    uint32_t valid_frames = 0;
+    StageStats camera_stats;
+    StageStats validation_stats;
+    StageStats preprocessing_stats;
+    StageStats inference_stats;
+    StageStats output_stats;
+
+    const auto report_timings = [&]() {
+        if (attempts < kTimingReportInterval) {
+            return;
+        }
+        ESP_LOGI(TAG, "Timing window: %u attempts, %u valid frames",
+                 static_cast<unsigned>(attempts),
+                 static_cast<unsigned>(valid_frames));
+        log_stage("Camera wait", camera_stats);
+        log_stage("Frame validation", validation_stats);
+        log_stage("Input quantization/copy", preprocessing_stats);
+        log_stage("Inference", inference_stats);
+        log_stage("Output serial", output_stats);
+        attempts = 0;
+        valid_frames = 0;
+        camera_stats = {};
+        validation_stats = {};
+        preprocessing_stats = {};
+        inference_stats = {};
+        output_stats = {};
+    };
 
     // run the model
     while (true) {
+        attempts++;
+
         // Get the current image of the camera
+        const int64_t camera_start_us = esp_timer_get_time();
         camera_fb_t *fb = esp_camera_fb_get();
+        record_stage(camera_stats, static_cast<uint64_t>(esp_timer_get_time() - camera_start_us));
 
         // check camera image integrity
         if (fb == nullptr) {
             ESP_LOGW(TAG, "No camera frame received");
+            report_timings();
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
-        if (fb->format != PIXFORMAT_GRAYSCALE || fb->width != kInputWidth || fb->height != kInputHeight || fb->len != kInputSize) {
+        const int64_t validation_start_us = esp_timer_get_time();
+        const bool valid_frame = fb->format == PIXFORMAT_GRAYSCALE &&
+                                 fb->width == kInputWidth &&
+                                 fb->height == kInputHeight &&
+                                 fb->len == kInputSize;
+        record_stage(validation_stats,
+                     static_cast<uint64_t>(esp_timer_get_time() - validation_start_us));
+        if (!valid_frame) {
             ESP_LOGE(TAG, "Unexpected Frame: %u Bytes, %ux%u, format %d", static_cast<unsigned>(fb->len), 
                 fb->width,
                 fb->height,
                 fb->format);
             esp_camera_fb_return(fb);
+            report_timings();
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
 
-        // parse image to tf interpreter
-        for (int i = 0; i < kInputSize; i++)
-            in->data.int8[i] = (int8_t)(fb->buf[i] - 128);
-        esp_camera_fb_return(fb);     
-        interp.Invoke();
-
-        // print label values
-        for (int i = 0; i < labels; i++) {
-            float value = (out->data.int8[i] - out->params.zero_point) * out->params.scale;
-            ESP_LOGI(TAG, "Label %d: %.3f", i, value);
+        // Quantize the grayscale pixels using the model's input tensor parameters.
+        const int64_t preprocessing_start_us = esp_timer_get_time();
+        if (in->params.scale == 1.0f && in->params.zero_point == -128) {
+            for (int i = 0; i < kInputSize; i++) {
+                in->data.int8[i] = static_cast<int8_t>(fb->buf[i] ^ 0x80);
+            }
+        } else {
+            for (int i = 0; i < kInputSize; i++) {
+                in->data.int8[i] = quantize_pixel(fb->buf[i], in);
+            }
         }
+        esp_camera_fb_return(fb);
+        record_stage(preprocessing_stats,
+                     static_cast<uint64_t>(esp_timer_get_time() - preprocessing_start_us));
+
+        // Run the model on this input and make sure it succeeds.
+        const int64_t inference_start_us = esp_timer_get_time();
+        if (kTfLiteOk != interpreter.Invoke()) {
+            record_stage(inference_stats,
+                         static_cast<uint64_t>(esp_timer_get_time() - inference_start_us));
+            ESP_LOGE(TAG, "Invoke failed.");
+            report_timings();
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+        record_stage(inference_stats,
+                     static_cast<uint64_t>(esp_timer_get_time() - inference_start_us));
+
+        // Dequantize the int8 output into the sigmoid probability range.
+        const int64_t output_start_us = esp_timer_get_time();
+        for (size_t i = 0; i < out->bytes / sizeof(int8_t); i++) {
+            const float probability =
+                (static_cast<int32_t>(out->data.int8[i]) - out->params.zero_point) *
+                out->params.scale;
+            printf("Output[%u]: %.6f\n", static_cast<unsigned>(i), probability);
+        }
+        record_stage(output_stats,
+                     static_cast<uint64_t>(esp_timer_get_time() - output_start_us));
+        valid_frames++;
+        report_timings();
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -140,7 +294,7 @@ extern "C" void app_main(void)
         .pixel_format = PIXFORMAT_GRAYSCALE,
         .frame_size = FRAMESIZE_QVGA,
         .jpeg_quality = 63,
-        .fb_count = 2, // Test fb_count = 1 because of Log Message "FB-Size: 44160 != 76800"
+        .fb_count = 1, // Test fb_count = 1 because of Log Message "FB-Size: 44160 != 76800"
         .fb_location = CAMERA_FB_IN_PSRAM,
         .grab_mode = CAMERA_GRAB_LATEST, // Test CAMERA_GRAB_WHEN_EMPTY because of Log Message "FB-Size: 44160 != 76800"
 #if CONFIG_CAMERA_CONVERTER_ENABLED
