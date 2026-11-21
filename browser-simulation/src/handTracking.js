@@ -1,4 +1,4 @@
-// Kamera-Anbindung und Hand-Erkennung mit dem MediaPipe Hand Landmarker.
+// Hand-Erkennung mit dem MediaPipe Hand Landmarker auf den Bildern der (nachgebildeten) ESP32-Kamera.
 // Läuft komplett im Browser (WASM + WebGL), das Kamerabild verlässt den Rechner nicht.
 import { HandLandmarker } from '@mediapipe/tasks-vision';
 // WASM-Laufzeit direkt aus dem npm-Paket: Vite liefert die Dateien aus bzw. kopiert sie beim Build (wie bei MuJoCo).
@@ -7,12 +7,6 @@ import wasmBinaryPath from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?ur
 
 /** Offizielles Modell „hand_landmarker“ (float16, Version 1), lokal abgelegt, damit es auch offline funktioniert. */
 const MODEL_URL = `${import.meta.env.BASE_URL}mediapipe/hand_landmarker.task`;
-
-/** Frontkamera mit 640×480: reicht für das Modell (rechnet intern mit 224×224) und hält die Latenz gering. */
-const CAMERA_CONSTRAINTS = {
-  audio: false,
-  video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-};
 
 let landmarkerPromise;
 
@@ -40,110 +34,40 @@ async function createLandmarker() {
 }
 
 /**
- * Startet/stoppt die Kamera und wertet jedes neue Kamerabild aus.
+ * Erkennt eine Hand in aufeinanderfolgenden Kamerabildern (MediaPipe im Video-Modus).
  *
- * `onResult(hand)` wird pro Kamerabild aufgerufen – mit `null`, wenn keine Hand im Bild ist, sonst mit:
+ * `detect(image, timestamp)` liefert `null`, wenn keine Hand im Bild ist, sonst:
  *   landmarks       21 × {x, y, z}: x, y normiert auf das (ungespiegelte) Kamerabild (0…1),
  *                   z = Tiefe relativ zum Handgelenk (kleiner = näher an der Kamera, etwa im Maßstab von x)
  *   worldLandmarks  21 × {x, y, z}: metrische 3D-Koordinaten in m, Ursprung etwa in der Handmitte
  *   handedness      'Left' | 'Right': linke bzw. rechte Hand der Person
  *   score           Sicherheit der Links/Rechts-Zuordnung (0…1)
- *
- * `onError(err)` meldet einen unerwarteten Abbruch (z. B. Kamera getrennt); das Tracking ist dann bereits gestoppt.
  */
 export class HandTracker {
-  constructor(video, { onResult, onError } = {}) {
-    this.video = video;
-    this.onResult = onResult;
-    this.onError = onError;
-    this.stream = null;
+  constructor() {
     this.landmarker = null;
     this.delegate = null; // 'GPU' | 'CPU'
-    this.fps = 0; // ausgewertete Kamerabilder pro Sekunde
-    this.frameRequest = 0;
-    this.lastVideoTime = -1;
     this.lastTimestamp = 0;
-    this.lastFrameAt = 0;
-    // requestVideoFrameCallback meldet sich genau einmal pro neuem Kamerabild. video.currentTime taugt dafür
-    // nicht: Es steigt bei Kamera-Streams kontinuierlich, sodass dasselbe Bild mehrfach ausgewertet würde.
-    this.perVideoFrame = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   }
 
-  get running() {
-    return this.stream !== null;
+  get ready() {
+    return this.landmarker !== null;
   }
 
-  async start() {
-    if (this.running) return;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('Kein Kamerazugriff möglich – die Seite muss über http://localhost oder HTTPS geöffnet werden.');
-    }
-    const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS).catch((err) => {
-      throw new Error(cameraErrorMessage(err), { cause: err });
-    });
+  /** Lädt WASM-Laufzeit und Modell (nur beim ersten Mal, danach sofort fertig). */
+  async load() {
+    ({ landmarker: this.landmarker, delegate: this.delegate } = await getLandmarker());
+  }
+
+  /** @param {TexImageSource} image z. B. die Canvas mit dem Kamerabild */
+  detect(image, timestamp) {
+    this.lastTimestamp = Math.max(timestamp, this.lastTimestamp + 1); // MediaPipe verlangt streng steigende Zeitstempel
     try {
-      this.video.srcObject = stream;
-      await this.video.play();
-      ({ landmarker: this.landmarker, delegate: this.delegate } = await getLandmarker());
+      return toHand(this.landmarker.detectForVideo(image, this.lastTimestamp));
     } catch (err) {
-      stream.getTracks().forEach((t) => t.stop());
-      this.video.srcObject = null;
-      throw err;
+      throw new Error(`Hand-Erkennung fehlgeschlagen: ${err?.message ?? err}`, { cause: err });
     }
-    this.stream = stream;
-    // Wird z. B. ausgelöst, wenn die Kamera abgesteckt oder vom System entzogen wird (nicht bei stop()).
-    stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-      if (this.stream === stream) this.fail(new Error('Die Verbindung zur Kamera wurde getrennt.'));
-    });
-    this.fps = 0;
-    this.lastVideoTime = -1;
-    this.lastFrameAt = performance.now();
-    this.scheduleFrame();
   }
-
-  stop() {
-    if (this.perVideoFrame) this.video.cancelVideoFrameCallback(this.frameRequest);
-    else cancelAnimationFrame(this.frameRequest);
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
-    this.video.srcObject = null;
-  }
-
-  fail(err) {
-    this.stop();
-    this.onError?.(err);
-  }
-
-  scheduleFrame() {
-    this.frameRequest = this.perVideoFrame
-      ? this.video.requestVideoFrameCallback(this.tick)
-      : requestAnimationFrame(this.tick);
-  }
-
-  tick = () => {
-    if (!this.running) return;
-    this.scheduleFrame();
-    const { video } = this;
-    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-    // Fallback ohne requestVideoFrameCallback: unveränderte Bilder zumindest grob überspringen.
-    if (!this.perVideoFrame) {
-      if (video.currentTime === this.lastVideoTime) return;
-      this.lastVideoTime = video.currentTime;
-    }
-
-    const now = performance.now();
-    this.lastTimestamp = Math.max(now, this.lastTimestamp + 1); // MediaPipe verlangt streng steigende Zeitstempel
-    let result;
-    try {
-      result = this.landmarker.detectForVideo(video, this.lastTimestamp);
-    } catch (err) {
-      this.fail(new Error(`Hand-Erkennung fehlgeschlagen: ${err?.message ?? err}`, { cause: err }));
-      return;
-    }
-    this.fps = 0.9 * this.fps + 0.1 * (1000 / Math.max(1, now - this.lastFrameAt));
-    this.lastFrameAt = now;
-    this.onResult?.(toHand(result));
-  };
 }
 
 function toHand(result) {
@@ -155,22 +79,6 @@ function toHand(result) {
     handedness: categoryName,
     score,
   };
-}
-
-function cameraErrorMessage(err) {
-  switch (err?.name) {
-    case 'NotAllowedError':
-    case 'SecurityError':
-      return 'Kamerazugriff verweigert – in den Website-Einstellungen des Browsers erlauben und erneut versuchen.';
-    case 'NotFoundError':
-    case 'OverconstrainedError':
-      return 'Keine Kamera gefunden.';
-    case 'NotReadableError':
-    case 'AbortError':
-      return 'Kamera ist belegt oder nicht verfügbar (z. B. durch eine andere Anwendung wie Teams oder Zoom).';
-    default:
-      return `Kamera konnte nicht gestartet werden: ${err?.message ?? err}`;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,8 +96,8 @@ const FINGERS = [
 const PALM = [0, 5, 9, 13, 17, 0];
 
 /**
- * Zeichnet Hand-Skelett und Landmarken auf eine Canvas, die deckungsgleich über dem Video liegt
- * (Spiegelung übernimmt CSS für Video und Canvas gemeinsam). `hand = null` leert die Canvas.
+ * Zeichnet Hand-Skelett und Landmarken auf eine Canvas, die deckungsgleich über dem Kamerabild liegt
+ * (Spiegelung übernimmt CSS für beide gemeinsam). `hand = null` leert die Canvas.
  */
 export function drawHand(canvas, hand) {
   const dpr = window.devicePixelRatio || 1;

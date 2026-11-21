@@ -1,5 +1,5 @@
 // Einstiegspunkt der Web-Oberfläche: Modell laden, Simulation laufen lassen, Gelenke/Aktuatoren steuern,
-// Hand per Kamera erkennen.
+// Hand per (wie beim ESP32 eingestellter) Kamera erkennen.
 import { Renderer } from './renderer.js';
 import {
   getMujoco,
@@ -10,6 +10,7 @@ import {
   findEntryCandidates,
 } from './mujoco.js';
 import { HandTracker, drawHand } from './handTracking.js';
+import { Esp32Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './esp32Camera.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -30,8 +31,15 @@ const ui = {
   dropOverlay: $('drop-overlay'),
   cameraToggle: $('camera-toggle'),
   cameraInfo: $('camera-info'),
+  cameraFrameSize: $('camera-framesize'),
+  cameraPixelFormat: $('camera-pixformat'),
+  cameraQualityRow: $('camera-quality-row'),
+  cameraQuality: $('camera-quality'),
+  cameraQualityValue: $('camera-quality-value'),
+  cameraFrameInfo: $('camera-frame-info'),
   cameraPreview: $('camera-preview'),
   cameraVideo: $('camera-video'),
+  cameraFrame: $('camera-frame'),
   cameraOverlay: $('camera-overlay'),
 };
 
@@ -297,13 +305,21 @@ function setStatus(text) {
 
 const CAMERA_IDLE_TEXT = ui.cameraInfo.textContent;
 const HANDEDNESS = { Left: 'Linke', Right: 'Rechte' };
+const BYTES = new Intl.NumberFormat('de-DE');
 
-const tracker = new HandTracker(ui.cameraVideo, {
-  onResult(hand) {
+const tracker = new HandTracker();
+const camera = new Esp32Camera(ui.cameraVideo, ui.cameraFrame, {
+  onFrame(frame) {
+    updateFrameInfo();
+    // Kleine Auflösungen pixelgenau vergrößern (siehe style.css).
+    ui.cameraFrame.classList.toggle('pixelated', ui.cameraFrame.clientWidth * devicePixelRatio >= 2 * frame.width);
+    if (!tracker.ready) return; // Handmodell wird noch geladen
+    // Erkannt wird auf dem angezeigten Kamerabild, also auf dem, was der ESP32 liefern würde.
+    const hand = tracker.detect(ui.cameraFrame, frame.timestamp);
     // Hier kann später die Abbildung der Landmarken auf die Gelenke ansetzen (z. B. window.sim.setJoints).
     state.hand = hand;
     drawHand(ui.cameraOverlay, hand);
-    const rate = `${tracker.fps.toFixed(0)} FPS (${tracker.delegate})`;
+    const rate = `${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
     setCameraInfo(
       hand
         ? `${HANDEDNESS[hand.handedness] ?? hand.handedness} Hand erkannt (${Math.round(hand.score * 100)} %) · ${rate}`
@@ -318,8 +334,8 @@ const tracker = new HandTracker(ui.cameraVideo, {
 });
 
 async function toggleCamera() {
-  if (tracker.running) {
-    tracker.stop();
+  if (camera.running) {
+    camera.stop();
     setCameraActive(false);
     setCameraInfo(CAMERA_IDLE_TEXT);
     return;
@@ -328,10 +344,12 @@ async function toggleCamera() {
   ui.cameraPreview.hidden = false;
   setCameraInfo('Kamera und Handmodell werden geladen…');
   try {
-    await tracker.start();
-    setCameraActive(true);
+    await camera.start();
+    await tracker.load();
+    if (camera.running) setCameraActive(true); // nicht, falls die Kamera inzwischen ausgefallen ist
   } catch (err) {
     console.error(err);
+    camera.stop();
     setCameraActive(false);
     setCameraInfo(err.message, true);
   } finally {
@@ -345,6 +363,7 @@ function setCameraActive(active) {
   if (!active) {
     state.hand = null;
     drawHand(ui.cameraOverlay, null);
+    updateFrameInfo();
   }
 }
 
@@ -352,6 +371,45 @@ function setCameraInfo(text, isError = false) {
   ui.cameraInfo.textContent = text;
   ui.cameraInfo.classList.toggle('error', isError);
 }
+
+/** Übernimmt eine (Teil-)Einstellung der Kamera, auch während sie läuft; wirft bei ungültigen Werten. */
+function setCameraConfig(changes) {
+  camera.setConfig(changes);
+  showCameraConfig();
+}
+
+function showCameraConfig() {
+  const { frameSize, pixelFormat, jpegQuality } = camera.config;
+  ui.cameraFrameSize.value = frameSize;
+  ui.cameraPixelFormat.value = pixelFormat;
+  ui.cameraQuality.value = jpegQuality;
+  ui.cameraQualityValue.textContent = jpegQuality;
+  ui.cameraQualityRow.hidden = pixelFormat !== 'JPEG';
+  updateFrameInfo();
+}
+
+/** Größe des Kamerabildes (wie fb->len); bei laufender Kamera die des letzten Bildes und die Webcam-Auflösung. */
+function updateFrameInfo() {
+  const { frame, webcam, config } = camera;
+  if (frame) {
+    const source = `Webcam ${webcam.width}×${webcam.height}${webcam.upscaled ? ' (hochskaliert)' : ''}`;
+    ui.cameraFrameInfo.textContent =
+      `${frame.width}×${frame.height} ${frame.format}: ${BYTES.format(frame.len)} Byte pro Bild · ${source}`;
+    return;
+  }
+  const { width, height } = getFrameSize(config.frameSize);
+  const bytes = frameBufferSize(config);
+  ui.cameraFrameInfo.textContent =
+    `${width}×${height} ${config.pixelFormat}: ${bytes ? `${BYTES.format(bytes)} Byte pro Bild` : 'Größe je nach Bildinhalt'}`;
+}
+
+ui.cameraFrameSize.replaceChildren(
+  ...FRAME_SIZES.map((s) => new Option(`${s.name} – ${s.width}×${s.height}`, s.name)),
+);
+ui.cameraPixelFormat.replaceChildren(
+  ...PIXEL_FORMATS.map((f) => new Option(`${f.name} – ${f.description}`, f.name)),
+);
+showCameraConfig();
 
 // ---------------------------------------------------------------------------
 // Ereignisse
@@ -369,6 +427,9 @@ document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', () => setMode(r.value)),
 );
 ui.cameraToggle.addEventListener('click', toggleCamera);
+ui.cameraFrameSize.addEventListener('change', () => setCameraConfig({ frameSize: ui.cameraFrameSize.value }));
+ui.cameraPixelFormat.addEventListener('change', () => setCameraConfig({ pixelFormat: ui.cameraPixelFormat.value }));
+ui.cameraQuality.addEventListener('input', () => setCameraConfig({ jpegQuality: Number(ui.cameraQuality.value) }));
 
 ui.modelSelect.addEventListener('change', () => {
   if (ui.modelSelect.value) guarded(() => loadServed(ui.modelSelect.value));
@@ -412,6 +473,18 @@ window.sim = {
   get mujoco() { return state.mujoco; },
   /** Zuletzt erkannte Hand der Kamera ({ landmarks, worldLandmarks, handedness, score }) oder null. */
   get hand() { return state.hand; },
+  /** Kamera wie beim ESP32 (siehe esp32Camera.js). */
+  camera: {
+    /** Einstellung { frameSize, pixelFormat, jpegQuality } – entspricht .frame_size, .pixel_format, .jpeg_quality. */
+    get config() { return { ...camera.config }; },
+    /** Letztes Kamerabild wie camera_fb_t ({ buf, len, width, height, format, timestamp }) oder null. */
+    get frame() { return camera.frame; },
+    /** Ändert die Einstellung, auch bei laufender Kamera, z. B. setConfig({ pixelFormat: 'GRAYSCALE' }). */
+    setConfig(changes) {
+      setCameraConfig(changes);
+      return { ...camera.config };
+    },
+  },
   /** Setzt Gelenkwinkel (rad bzw. m) nach Name und aktualisiert die Kinematik. */
   setJoints(values) {
     const { mujoco, model, data } = state;

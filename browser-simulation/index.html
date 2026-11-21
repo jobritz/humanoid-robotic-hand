@@ -47,6 +47,20 @@
           <button id="camera-toggle">Kamera aktivieren</button>
         </div>
         <p id="camera-info" class="info">Erkennt die eigene Hand live (MediaPipe).</p>
+        <p class="hint">Bild wie von der ESP32-CAM (OV2640), Einstellungen wie in <code>camera_config_t</code>:</p>
+        <label>Auflösung (frame_size)
+          <select id="camera-framesize"></select>
+        </label>
+        <label>Farbcodierung (pixel_format)
+          <select id="camera-pixformat"></select>
+        </label>
+        <div id="camera-quality-row" class="control">
+          <div class="control-head">
+            <span>JPEG-Qualität (jpeg_quality, 0 = beste)</span><output id="camera-quality-value"></output>
+          </div>
+          <input id="camera-quality" type="range" min="0" max="63" step="1" />
+        </div>
+        <p id="camera-frame-info" class="info"></p>
       </section>
 
       <section class="grow">
@@ -65,6 +79,7 @@
       <div id="drop-overlay" hidden>Modellordner hier ablegen</div>
       <div id="camera-preview" hidden>
         <video id="camera-video" autoplay muted playsinline></video>
+        <canvas id="camera-frame"></canvas>
         <canvas id="camera-overlay"></canvas>
       </div>
     </main>
