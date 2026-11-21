@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@litertjs/core": "2.6.0",
     "@mediapipe/tasks-vision": "1.2.2",
     "@mujoco/mujoco": "3.17.0",
     "three": "0.187.0"

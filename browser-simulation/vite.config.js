@@ -35,10 +35,42 @@ function modelsManifest() {
   };
 }
 
+const LITERT_DIR = path.resolve(import.meta.dirname, 'node_modules/@litertjs/core/wasm');
+/** Benötigte LiteRT.js-Laufzeiten: Standard (mit Relaxed SIMD) und „compat“ für ältere Browser, je .js + .wasm. */
+const LITERT_FILES = ['litert_wasm_internal', 'litert_wasm_compat_internal'].flatMap((n) => [`${n}.js`, `${n}.wasm`]);
+
+/**
+ * Stellt die WASM-Laufzeit von LiteRT.js unter /litert/ bereit (Dev-Server) bzw. kopiert sie nach dist/litert/.
+ * LiteRT.js lädt sie zur Laufzeit selbst aus einem Ordner und wählt die zum Browser passende Variante.
+ */
+function liteRtWasm() {
+  return {
+    name: 'litert-wasm',
+    configureServer(server) {
+      server.middlewares.use('/litert', (req, res, next) => {
+        const file = req.url.split('?')[0].slice(1);
+        if (!LITERT_FILES.includes(file)) return next();
+        res.setHeader('Content-Type', file.endsWith('.wasm') ? 'application/wasm' : 'text/javascript');
+        fs.createReadStream(path.join(LITERT_DIR, file)).pipe(res);
+      });
+    },
+    generateBundle() {
+      for (const file of LITERT_FILES) {
+        this.emitFile({ type: 'asset', fileName: `litert/${file}`, source: fs.readFileSync(path.join(LITERT_DIR, file)) });
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [modelsManifest()],
+  plugins: [modelsManifest(), liteRtWasm()],
   optimizeDeps: { exclude: ['@mujoco/mujoco'] },
   // MuJoCo-Glue-Code + three.js ergeben ein großes Bundle; die WASM-Datei liegt separat.
   build: { target: 'esnext', chunkSizeWarningLimit: 1500 },
-  server: { port: 5173, open: true },
+  server: {
+    port: 5173,
+    open: true,
+    // Das KI-Modell wird direkt aus der Firmware (esp/esp32ai/hand.tflite) geladen, nicht kopiert.
+    fs: { allow: ['.', '../esp/esp32ai'] },
+  },
 });

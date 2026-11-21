@@ -7,7 +7,8 @@ Die Physik läuft direkt im Browser über die offiziellen MuJoCo-WASM-Bindings v
 ([MediaPipe Hand Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker), siehe
 [Kamera & Hand-Tracking](#kamera--hand-tracking)). Das Kamerabild lässt sich dabei wie die Kamera der ESP32-CAM
 einstellen (nur deren Auflösungen und Farbcodierungen), damit KI-Modelle für den ESP32 im Browser mit denselben
-Eingabedaten getestet werden können (siehe [ESP32-Kamera nachbilden](#esp32-kamera-nachbilden)).
+Eingabedaten getestet werden können (siehe [ESP32-Kamera nachbilden](#esp32-kamera-nachbilden)). Das KI-Modell der
+Firmware läuft direkt auf diesen Kamerabildern mit (siehe [ESP32-KI-Modell testen](#esp32-ki-modell-testen)).
 Node.js wird als Entwicklungs-/Build-Umgebung genutzt (Vite).
 
 ## Starten
@@ -58,6 +59,7 @@ Mitgelieferte Modelle:
 | Geom-Gruppen | Ein-/Ausblenden von Geom-Gruppen (Standard: 0–2 sichtbar, Kollisions-Geoms oft in Gruppe 3) |
 | Kamera aktivieren / beenden | Startet bzw. stoppt Kamera und Hand-Tracking, Vorschau unten rechts (siehe nächster Abschnitt) |
 | Auflösung, Farbcodierung, JPEG-Qualität | Kamera wie beim ESP32 einstellen (`frame_size`, `pixel_format`, `jpeg_quality`), wirkt sofort |
+| ESP32-KI-Modell | Modell wählen oder `.tflite` öffnen, starten/stoppen, Ausgaben ansehen, optional die Hand ansteuern (siehe [ESP32-KI-Modell testen](#esp32-ki-modell-testen)) |
 | Maus | Linke Taste drehen, rechte Taste verschieben, Mausrad zoomen |
 
 ## Kamera & Hand-Tracking
@@ -188,6 +190,73 @@ Bildrate und die Grenzen des ESP32:
   dokumentiert; die Umrechnung `yuv2rgb()` im Treiber geht vom eingeschränkten Bereich aus. Kommt es auf exakte
   Helligkeitswerte an, mit Aufnahmen des echten ESP32 vergleichen.
 
+## ESP32-KI-Modell testen
+
+Das KI-Modell, das auf dem ESP32 laufen soll ([`esp/esp32ai`](../esp/esp32ai)), wird im Browser auf den Bildern der
+nachgebildeten ESP32-Kamera ausgeführt, so wie in der Firmware. Damit lässt sich ein Modell testen, bevor es geflasht
+wird. Standardmäßig wird direkt die Datei der Firmware geladen (`esp/esp32ai/hand.tflite`, dieselbe Datei, die
+`create_model.py` erzeugt und die in `main/model.cc` eingebettet ist). Es gibt also keine Kopie, die veralten kann.
+
+1. Kamera aktivieren (siehe oben). Für das Firmware-Modell `GRAYSCALE` wählen, wie in der Firmware. Andere Formate
+   funktionieren auch, dann wird wie unten beschrieben umgerechnet.
+2. Unter „ESP32-KI-Modell“ auf **Modell starten** klicken. Beim ersten Mal wird die Laufzeit LiteRT.js geladen (ca. 11 MB).
+3. Angezeigt werden:
+   - die Eckdaten des Modells: Eingabe (Größe × Kanäle, Datentyp, Quantisierung), Anzahl der Ausgaben und die
+     verwendeten Operatoren,
+   - links das Bild, wie es das Modell bekommt (nach Zuschnitt und Verkleinerung),
+   - rechts ein Balken je Ausgabe (`Output[0]`, `Output[1]`, …, wie im seriellen Monitor des ESP32),
+   - die Rechenzeit pro Bild im Browser (sagt nichts über die Rechenzeit auf dem ESP32 aus).
+4. **Datei öffnen…** lädt ein anderes `.tflite`-Modell, z. B. ein frisch trainiertes. Alle geöffneten Modelle bleiben
+   bis zum Neuladen der Seite in der Auswahl.
+5. **Ausgaben steuern die Hand (Platzhalter):** Die Ausgaben bewegen die simulierte Hand (nur im Physik-Modus). Solange
+   die genauen Abläufe noch nicht feststehen, beugt Ausgabe *i* (0…1) einfach Finger *i* (Zeige-, Mittel-, Ringfinger,
+   Daumen) von 0 bis 90°. Die Abbildung steht in `placeholderHandMapping()` in [`src/main.js`](src/main.js) und lässt sich
+   per `window.sim.esp32Model.setHandMapping()` ersetzen (siehe unten).
+
+**Was genau wie in der Firmware passiert** (`preprocess_frame()` und `run_model()` in
+[`esp32ai.cc`](../esp/esp32ai/main/esp32ai.cc)):
+
+| Schritt | Firmware | Browser |
+| --- | --- | --- |
+| Zuschnitt | mittig auf das Seitenverhältnis der Modelleingabe | gleich, auch mit derselben Ganzzahl-Rundung |
+| Verkleinerung | Mittelwert der Quellpixel je Zielpixel, ganzzahlig abgerundet | gleich (pixelgenau geprüft) |
+| Zu kleines Bild | wird verworfen | wird verworfen, Hinweis im Panel |
+| Eingabe | `Pixel - 128` (fest für dieses Modell) | `round(Pixel / scale) + zero_point` aus dem Modell, für `hand.tflite` (scale 1, zero_point −128) identisch |
+| Ausgabe | `(q - zero_point) * scale` | gleich |
+
+**Flexibel für neue Modelle:** Eingabegröße, Kanäle, Datentyp und Quantisierung werden aus der `.tflite`-Datei gelesen
+([`src/tfliteInfo.js`](src/tfliteInfo.js)). Unterstützt werden Modelle mit genau einer Bild-Eingabe
+`[1, Höhe, Breite, 1 oder 3]` (NHWC) vom Typ `int8`, `uint8` oder `float32`, beliebig viele Ausgaben derselben Typen.
+Graustufen-Modelle (1 Kanal) bekommen die Helligkeit Y (BT.601), Farbmodelle (3 Kanäle) R, G, B. Bei `GRAYSCALE` mit
+einem Graustufen-Modell wird der Bildpuffer wie in der Firmware direkt verwendet, andere Formate werden vorher
+umgerechnet: bei `RGB565` und `YUV422` wie für die Anzeige, JPEG dekodiert der Browser.
+
+**Was nicht im Modell steht:** Der Wertebereich der Pixel beim Training. Standard ist 0…255 wie in `create_model.py`
+(Pixel unverändert). Wurde ein Modell mit 0…1 oder −1…1 trainiert, beim Laden `inputRange` angeben:
+`Esp32Model.load(url, { inputRange: [0, 1] })` in [`src/esp32Model.js`](src/esp32Model.js).
+
+**Technik:** [LiteRT.js](https://www.npmjs.com/package/@litertjs/core) (`@litertjs/core`, Nachfolger von TensorFlow Lite
+für das Web, Apache-2.0) auf der CPU (WebAssembly mit XNNPACK). Die WASM-Laufzeit stammt aus dem npm-Paket. Vite stellt
+sie unter `/litert/` bereit bzw. kopiert sie beim Build nach `dist/litert/` (siehe `vite.config.js`), damit alles auch
+offline funktioniert. Zwei Anpassungen, damit Modelle für den ESP32 laufen:
+
+- LiteRT.js liefert `scale` und `zero_point` nicht. Sie werden deshalb direkt aus der Datei gelesen.
+- Keras speichert die Batch-Größe als dynamisch (`shape_signature` `[-1, 60, 80, 1]`), was LiteRT.js ablehnt. TFLM auf
+  dem ESP32 ignoriert dieses Feld. Im Browser wird es deshalb vor dem Laden in einer Kopie auf die feste Form gesetzt.
+
+In der Browser-Konsole erscheinen beim Laden einige `INFO`- und `WARNING`-Meldungen von LiteRT.js (als Fehler markiert,
+weil sie über `stderr` kommen). Sie sind normal.
+
+**Unterschiede zum ESP32:** Gerechnet wird mit LiteRT.js (XNNPACK) statt mit TensorFlow Lite Micro (ESP-NN). Die
+Ergebnisse können in der letzten Stelle abweichen. Nicht geprüft werden die Grenzen des ESP32: Größe der Tensor-Arena
+(`kArena`, 32 KB) und ob alle Operatoren im `MicroMutableOpResolver` registriert sind. Die angezeigten Operatoren also mit
+den `Add…()`-Aufrufen in `esp32ai.cc` vergleichen. Wer sicher gehen will, vergleicht die Ausgaben für dasselbe Bild mit
+denen des ESP32.
+
+**Hinweis zum aktuellen Modell:** `hand.tflite` hat zufällige Gewichte (nur zum Testen der Inferenz). Die Aktivierungen
+werden im Netz so klein, dass die Ausgabe bei jedem Bild `0.500` ist. Das ist kein Fehler der Simulation, der ESP32
+liefert dasselbe. Sinnvolle Werte gibt es erst mit einem trainierten Modell.
+
 ## Schnittstelle für die Ansteuerung
 
 Für die Anbindung der Posenschätzung (Landmarken → Gelenkwinkel) gibt es im Browser das Objekt `window.sim`:
@@ -201,10 +270,27 @@ window.sim.camera.config                                   // { frameSize, pixel
 window.sim.camera.frame                                    // letztes Kamerabild wie camera_fb_t oder null
 window.sim.model / window.sim.data / window.sim.mujoco    // direkter Zugriff auf MuJoCo
 
+// ESP32-KI-Modell
+window.sim.esp32Model.info                 // geladenes Modell { name, size, input, outputs, operators, inputRange } oder null
+window.sim.esp32Model.result               // letztes Ergebnis { values, timestamp, preprocessMs, inferenceMs } oder null
+await window.sim.esp32Model.load(url)      // anderes Modell laden (URL, File oder Uint8Array) und starten
+await window.sim.esp32Model.run(frame)     // eigenes Bild auswerten, aufgebaut wie camera_fb_t – auch ohne Kamera
+window.sim.esp32Model.setLabels(['offen', 'Faust', 'Zeigen']); // Ausgaben beschriften ([] = Output[i])
+window.sim.esp32Model.setHandMapping((values) => ({ thumb_flex: values[0] * 1.57 })); // eigene Ansteuerung, null = Platzhalter
+window.sim.esp32Model.driveHand = true;    // Ansteuerung der Hand ein/aus (wie die Checkbox)
+
 // Beispiel: Abstand zwischen Daumen- und Zeigefingerspitze in cm
 const p = window.sim.hand.worldLandmarks;
 Math.hypot(p[4].x - p[8].x, p[4].y - p[8].y, p[4].z - p[8].z) * 100;
+
+// Beispiel: Testbild ohne Kamera auswerten (Graustufen-Verlauf 320×240)
+const buf = new Uint8Array(320 * 240).map((_, i) => (i % 320) * 255 / 319);
+await window.sim.esp32Model.run({ buf, width: 320, height: 240, format: 'GRAYSCALE' }); // { values, pixels, … }
 ```
+
+Die Funktion für `setHandMapping` bekommt die Modellausgaben (`values`, Zahlen wie in der Firmware umgerechnet) und gibt
+Aktuator-Sollwerte in rad zurück, wie `setControls`. Sie wird bei jedem ausgewerteten Kamerabild aufgerufen, wenn die
+Ansteuerung eingeschaltet ist.
 
 ## Aufbau
 
@@ -216,13 +302,18 @@ browser-simulation/
 │  ├─ models/          Mitgelieferte MuJoCo-Modelle (ein Ordner pro Modell)
 │  └─ mediapipe/       Hand-Landmarker-Modell (hand_landmarker.task)
 └─ src/
-   ├─ main.js          UI, Simulationsschleife, Kamera-Steuerung, window.sim
+   ├─ main.js          UI, Simulationsschleife, Kamera-Steuerung, KI-Modell-Panel, window.sim
    ├─ mujoco.js        Laden der WASM-Engine, Kompilieren über das virtuelle Dateisystem
    ├─ renderer.js      three.js-Darstellung der Geoms (Primitive + Meshes)
    ├─ esp32Camera.js   Webcam als ESP32-Kamera: Auflösungen, Farbcodierungen, Bildpuffer wie camera_fb_t
+   ├─ esp32Model.js    KI-Modell für den ESP32 mit LiteRT.js: Vorverarbeitung und (De-)Quantisierung wie die Firmware
+   ├─ tfliteInfo.js    Liest Ein-/Ausgaben, Quantisierung und Operatoren aus .tflite-Dateien
    ├─ handTracking.js  MediaPipe Hand Landmarker, Landmarken-Overlay der Vorschau
    └─ style.css
 ```
+
+Das KI-Modell selbst liegt nicht hier, sondern wird aus [`../esp/esp32ai/hand.tflite`](../esp/esp32ai/hand.tflite)
+geladen (dafür erlaubt `vite.config.js` dem Dev-Server den Zugriff auf diesen Ordner).
 
 ## Einschränkungen
 
@@ -232,5 +323,9 @@ browser-simulation/
   (nächster Schritt: `window.sim.hand` → Gelenkwinkel → `window.sim.setJoints`). Es wird eine Hand verfolgt; die
   Tiefenwerte sind relativ zur Hand, der absolute Abstand zur Kamera wird nicht geschätzt.
 - Die Hand-Erkennung läuft im Haupt-Thread des Browsers. Ohne GPU-Beschleunigung bremst sie die Simulation spürbar.
+- ESP32-KI-Modell: Die Ansteuerung der Hand aus den Modellausgaben ist ein Platzhalter, bis die Abläufe feststehen.
+  Größe der Tensor-Arena und registrierte Operatoren des ESP32 werden nicht geprüft (siehe
+  [ESP32-KI-Modell testen](#esp32-ki-modell-testen)). Bei Modellen mit mehreren Ausgabetensoren wird angenommen, dass
+  LiteRT.js sie in der Reihenfolge des Modells liefert.
 - Die ESP32-Nachbildung läuft ebenfalls im Haupt-Thread. Bis VGA kostet sie kaum Zeit (gemessen mit Intel Iris Xe:
   rund 30 Kamerabilder pro Sekunde wie ohne Nachbildung), bei UXGA sinkt die Rate auf etwa 12–20 Bilder pro Sekunde.

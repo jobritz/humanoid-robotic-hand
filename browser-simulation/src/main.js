@@ -1,5 +1,5 @@
 // Einstiegspunkt der Web-Oberfläche: Modell laden, Simulation laufen lassen, Gelenke/Aktuatoren steuern,
-// Hand per (wie beim ESP32 eingestellter) Kamera erkennen.
+// Hand per (wie beim ESP32 eingestellter) Kamera erkennen, KI-Modelle für den ESP32 auf den Kamerabildern testen.
 import { Renderer } from './renderer.js';
 import {
   getMujoco,
@@ -11,6 +11,7 @@ import {
 } from './mujoco.js';
 import { HandTracker, drawHand } from './handTracking.js';
 import { Esp32Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './esp32Camera.js';
+import { Esp32Model, FIRMWARE_MODEL_URL } from './esp32Model.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -41,6 +42,16 @@ const ui = {
   cameraVideo: $('camera-video'),
   cameraFrame: $('camera-frame'),
   cameraOverlay: $('camera-overlay'),
+  aiModelSelect: $('ai-model-select'),
+  aiToggle: $('ai-toggle'),
+  aiOpen: $('ai-open'),
+  aiFileInput: $('ai-file-input'),
+  aiInfo: $('ai-info'),
+  aiResult: $('ai-result'),
+  aiInput: $('ai-input'),
+  aiOutputs: $('ai-outputs'),
+  aiDriveHand: $('ai-drive-hand'),
+  aiStatus: $('ai-status'),
 };
 
 const JOINT = { FREE: 0, BALL: 1, SLIDE: 2, HINGE: 3 };
@@ -313,18 +324,9 @@ const camera = new Esp32Camera(ui.cameraVideo, ui.cameraFrame, {
     updateFrameInfo();
     // Kleine Auflösungen pixelgenau vergrößern (siehe style.css).
     ui.cameraFrame.classList.toggle('pixelated', ui.cameraFrame.clientWidth * devicePixelRatio >= 2 * frame.width);
-    if (!tracker.ready) return; // Handmodell wird noch geladen
-    // Erkannt wird auf dem angezeigten Kamerabild, also auf dem, was der ESP32 liefern würde.
-    const hand = tracker.detect(ui.cameraFrame, frame.timestamp);
-    // Hier kann später die Abbildung der Landmarken auf die Gelenke ansetzen (z. B. window.sim.setJoints).
-    state.hand = hand;
-    drawHand(ui.cameraOverlay, hand);
-    const rate = `${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
-    setCameraInfo(
-      hand
-        ? `${HANDEDNESS[hand.handedness] ?? hand.handedness} Hand erkannt (${Math.round(hand.score * 100)} %) · ${rate}`
-        : `Keine Hand im Bild · ${rate}`,
-    );
+    if (tracker.ready) trackHand(frame); // sonst wird das Handmodell noch geladen
+    // Erst nach dem Hand-Tracking, damit dessen Rechenzeit nicht in die gemessene Zeit des KI-Modells fällt.
+    runEsp32Model(frame);
   },
   onError(err) {
     console.error(err);
@@ -332,6 +334,20 @@ const camera = new Esp32Camera(ui.cameraVideo, ui.cameraFrame, {
     setCameraInfo(err.message, true);
   },
 });
+
+function trackHand(frame) {
+  // Erkannt wird auf dem angezeigten Kamerabild, also auf dem, was der ESP32 liefern würde.
+  const hand = tracker.detect(ui.cameraFrame, frame.timestamp);
+  // Hier kann später die Abbildung der Landmarken auf die Gelenke ansetzen (z. B. window.sim.setJoints).
+  state.hand = hand;
+  drawHand(ui.cameraOverlay, hand);
+  const rate = `${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
+  setCameraInfo(
+    hand
+      ? `${HANDEDNESS[hand.handedness] ?? hand.handedness} Hand erkannt (${Math.round(hand.score * 100)} %) · ${rate}`
+      : `Keine Hand im Bild · ${rate}`,
+  );
+}
 
 async function toggleCamera() {
   if (camera.running) {
@@ -364,6 +380,7 @@ function setCameraActive(active) {
     state.hand = null;
     drawHand(ui.cameraOverlay, null);
     updateFrameInfo();
+    showAiWaiting();
   }
 }
 
@@ -412,6 +429,166 @@ ui.cameraPixelFormat.replaceChildren(
 showCameraConfig();
 
 // ---------------------------------------------------------------------------
+// ESP32-KI-Modell (siehe esp32Model.js)
+// ---------------------------------------------------------------------------
+
+/** Fingerbeuger der Amazing Hand, der Reihe nach von den Modellausgaben angesteuert (Platzhalter). */
+const FLEX_ACTUATORS = ['index_flex', 'middle_flex', 'ring_flex', 'thumb_flex'];
+
+/**
+ * Platzhalter für die Ansteuerung der Hand, bis die Abläufe feststehen: Ausgabe i (0…1) beugt Finger i (Zeige-,
+ * Mittel-, Ringfinger, Daumen) von 0 bis 90°. Ersetzen mit window.sim.esp32Model.setHandMapping(fn).
+ * @param {number[]} values Modellausgaben
+ * @returns {Record<string, number>} Aktuator-Sollwerte in rad (wie window.sim.setControls)
+ */
+function placeholderHandMapping(values) {
+  return Object.fromEntries(
+    FLEX_ACTUATORS.slice(0, values.length).map((name, i) => [name, Math.min(1, Math.max(0, values[i])) * (Math.PI / 2)]),
+  );
+}
+
+const ai = {
+  /** Auswahl im Panel: Firmware-Modell und alle in dieser Sitzung geöffneten Dateien. */
+  sources: [{ label: 'Firmware: esp/esp32ai/hand.tflite', source: FIRMWARE_MODEL_URL, name: 'hand.tflite (Firmware)' }],
+  model: null, // geladenes Esp32Model
+  running: null, // laufende Auswertung (Promise) – solange verfallen neue Kamerabilder wie bei CAMERA_GRAB_LATEST
+  enabled: false, // wertet Kamerabilder aus
+  result: null, // letztes Ergebnis { values, timestamp, preprocessMs, inferenceMs }
+  labels: [], // Beschriftung der Ausgaben, leer = Output[i] wie im seriellen Monitor des ESP32
+  handMapping: placeholderHandMapping,
+  bars: [], // Anzeige je Ausgabe { output, bar }
+};
+
+/** Lädt ein Modell und ersetzt das bisherige erst, wenn das neue fertig geladen ist. */
+async function loadAiModel(source, name) {
+  setAiInfo(`Lade ${name}…`);
+  ui.aiToggle.disabled = true;
+  try {
+    const model = await Esp32Model.load(source, { name });
+    const old = ai.model;
+    ai.model = null;
+    await ai.running; // laufende Auswertung des alten Modells abwarten, erst dann freigeben
+    old?.delete();
+    ai.model = model;
+    ai.result = null;
+    showAiModel();
+  } finally {
+    ui.aiToggle.disabled = false;
+  }
+}
+
+function loadSelectedAiModel() {
+  const { source, name } = ai.sources[ui.aiModelSelect.value];
+  return loadAiModel(source, name);
+}
+
+async function toggleAiModel() {
+  if (ai.enabled) return setAiEnabled(false);
+  if (!ai.model) await loadSelectedAiModel();
+  setAiEnabled(true);
+}
+
+function setAiEnabled(enabled) {
+  ai.enabled = enabled;
+  ui.aiToggle.textContent = enabled ? 'Modell stoppen' : 'Modell starten';
+  ui.aiResult.hidden = !enabled;
+  showAiWaiting();
+}
+
+/** Hinweis, solange das Modell läuft, aber keine Kamerabilder kommen. */
+function showAiWaiting() {
+  ui.aiStatus.textContent = ai.enabled && !camera.running ? 'Wartet auf Kamerabilder – oben „Kamera aktivieren“.' : '';
+}
+
+function setAiInfo(text, isError = false) {
+  ui.aiInfo.textContent = text;
+  ui.aiInfo.classList.toggle('error', isError);
+}
+
+function showAiError(err) {
+  console.error(err);
+  setAiEnabled(false);
+  setAiInfo(err.message, true);
+}
+
+/** Eckdaten des Modells: Eingabe (wie kInputWidth/kInputHeight in der Firmware), Ausgaben, Operatoren. */
+function showAiModel() {
+  const { name, size, input, outputs, operators } = ai.model;
+  const quant = input.scale ? `, scale ${input.scale}, zero_point ${input.zeroPoint}` : '';
+  const count = outputs.reduce((n, o) => n + o.shape.reduce((a, b) => a * b, 1), 0);
+  setAiInfo(
+    `${name}, ${BYTES.format(size)} Byte · Eingabe ${input.width}×${input.height}×${input.channels} ` +
+      `${input.dtype}${quant} · ${count} Ausgaben · Operatoren: ${operators.join(', ')}`,
+  );
+  Object.assign(ui.aiInput, { width: input.width, height: input.height });
+  buildAiOutputs(count);
+}
+
+function buildAiOutputs(count) {
+  ai.bars = Array.from({ length: count }, (_, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'control';
+    wrap.innerHTML = `<div class="control-head"><span></span><output>–</output></div><div class="ai-bar"><span></span></div>`;
+    wrap.querySelector('span').textContent = ai.labels[i] ?? `Output[${i}]`;
+    return { wrap, output: wrap.querySelector('output'), bar: wrap.querySelector('.ai-bar span') };
+  });
+  ui.aiOutputs.replaceChildren(...ai.bars.map((b) => b.wrap));
+}
+
+/** Wertet ein Kamerabild aus, sofern das Modell läuft und gerade frei ist. */
+function runEsp32Model(frame) {
+  const { model } = ai;
+  if (!ai.enabled || !model || ai.running) return;
+  ai.running = model
+    .run(frame)
+    .then((result) => {
+      if (ai.model === model && ai.enabled) showAiResult(result, frame);
+    })
+    .catch((err) => showAiError(new Error(`Auswertung fehlgeschlagen: ${err?.message ?? err}`, { cause: err })))
+    .finally(() => {
+      ai.running = null;
+    });
+}
+
+function showAiResult(result, frame) {
+  const { input } = ai.model;
+  if (!result) {
+    ui.aiStatus.textContent =
+      `Kamerabild ${frame.width}×${frame.height} ist kleiner als die Modelleingabe ${input.width}×${input.height} – ` +
+      'größere Auflösung wählen (die Firmware würde das Bild ebenfalls ablehnen).';
+    return;
+  }
+  const { values, pixels, preprocessMs, inferenceMs } = result;
+  ai.result = { values, timestamp: frame.timestamp, preprocessMs, inferenceMs };
+  values.forEach((v, i) => {
+    if (!ai.bars[i]) return;
+    ai.bars[i].output.textContent = v.toFixed(3);
+    ai.bars[i].bar.style.width = `${Math.min(1, Math.max(0, v)) * 100}%`; // Balken für Werte 0…1
+  });
+  drawModelInput(pixels, input);
+  ui.aiStatus.textContent =
+    `${(preprocessMs + inferenceMs).toFixed(1)} ms pro Bild ` +
+    `(Vorverarbeitung ${preprocessMs.toFixed(1)} ms, Modell ${inferenceMs.toFixed(1)} ms im Browser)`;
+  if (ui.aiDriveHand.checked && state.model) setControls(ai.handMapping(values));
+}
+
+/** Zeigt das Bild, wie es das Modell bekommt (nach Zuschnitt und Verkleinerung). */
+function drawModelInput(pixels, { width, height, channels }) {
+  const image = new ImageData(width, height);
+  for (let i = 0; i < width * height; i++) {
+    const p = i * channels;
+    image.data.set(channels === 1 ? [pixels[p], pixels[p], pixels[p], 255] : [...pixels.subarray(p, p + 3), 255], 4 * i);
+  }
+  ui.aiInput.getContext('2d').putImageData(image, 0, 0);
+}
+
+function fillAiModelSelect(selected = 0) {
+  ui.aiModelSelect.replaceChildren(...ai.sources.map((s, i) => new Option(s.label, i, false, i === selected)));
+}
+
+fillAiModelSelect();
+
+// ---------------------------------------------------------------------------
 // Ereignisse
 // ---------------------------------------------------------------------------
 
@@ -430,6 +607,20 @@ ui.cameraToggle.addEventListener('click', toggleCamera);
 ui.cameraFrameSize.addEventListener('change', () => setCameraConfig({ frameSize: ui.cameraFrameSize.value }));
 ui.cameraPixelFormat.addEventListener('change', () => setCameraConfig({ pixelFormat: ui.cameraPixelFormat.value }));
 ui.cameraQuality.addEventListener('input', () => setCameraConfig({ jpegQuality: Number(ui.cameraQuality.value) }));
+
+ui.aiToggle.addEventListener('click', () => toggleAiModel().catch(showAiError));
+ui.aiModelSelect.addEventListener('change', () =>
+  loadSelectedAiModel().then(() => setAiEnabled(true)).catch(showAiError),
+);
+ui.aiOpen.addEventListener('click', () => ui.aiFileInput.click());
+ui.aiFileInput.addEventListener('change', () => {
+  const [file] = ui.aiFileInput.files;
+  ui.aiFileInput.value = '';
+  if (!file) return;
+  ai.sources.push({ label: `Datei: ${file.name}`, source: file, name: file.name });
+  fillAiModelSelect(ai.sources.length - 1);
+  loadSelectedAiModel().then(() => setAiEnabled(true)).catch(showAiError);
+});
 
 ui.modelSelect.addEventListener('change', () => {
   if (ui.modelSelect.value) guarded(() => loadServed(ui.modelSelect.value));
@@ -466,6 +657,16 @@ ui.viewport.addEventListener('drop', (e) => {
   });
 });
 
+/** Setzt Aktuator-Sollwerte nach Name (wirksam im Physik-Modus). */
+function setControls(values) {
+  const { mujoco, model, data } = state;
+  for (const [actName, v] of Object.entries(values)) {
+    const id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR.value, actName);
+    if (id >= 0) data.ctrl[id] = v;
+  }
+  if (state.mode === 'physics') state.sliders.forEach((s) => s.refresh());
+}
+
 // Schnittstelle für spätere Anbindung (z. B. Posenschätzung): window.sim.setJoints({ index_mcp: 0.5 })
 window.sim = {
   get model() { return state.model; },
@@ -496,13 +697,37 @@ window.sim = {
     if (state.mode === 'kinematic') state.sliders.forEach((s) => s.refresh());
   },
   /** Setzt Aktuator-Sollwerte nach Name (wirksam im Physik-Modus). */
-  setControls(values) {
-    const { mujoco, model, data } = state;
-    for (const [actName, v] of Object.entries(values)) {
-      const id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR.value, actName);
-      if (id >= 0) data.ctrl[id] = v;
-    }
-    if (state.mode === 'physics') state.sliders.forEach((s) => s.refresh());
+  setControls,
+  /** KI-Modell für den ESP32, ausgewertet auf den Kamerabildern (siehe esp32Model.js). */
+  esp32Model: {
+    /** Geladenes Modell { name, size, input, outputs, operators, inputRange } oder null. */
+    get info() {
+      const m = ai.model;
+      return m && { name: m.name, size: m.size, input: { ...m.input }, outputs: m.outputs, operators: m.operators, inputRange: m.inputRange };
+    },
+    /** Letztes Ergebnis { values, timestamp, preprocessMs, inferenceMs } oder null. */
+    get result() { return ai.result; },
+    /** Lädt ein Modell (URL, File oder Uint8Array) und startet es. */
+    async load(source, name = String(source)) {
+      await loadAiModel(source, name);
+      setAiEnabled(true);
+      return this.info;
+    },
+    /** Wertet ein eigenes Bild aus, aufgebaut wie camera_fb_t ({ buf, width, height, format }) – auch ohne Kamera. */
+    run(frame) {
+      if (!ai.model) throw new Error('Kein Modell geladen.');
+      return ai.model.run(frame);
+    },
+    /** Beschriftet die Ausgaben, z. B. setLabels(['offen', 'Faust', 'Zeigen']); [] = Output[i]. */
+    setLabels(labels) {
+      ai.labels = [...labels];
+      if (ai.model) buildAiOutputs(ai.bars.length);
+    },
+    /** Ersetzt die Ansteuerung der Hand: fn(values) → { aktuator: Sollwert in rad }; null = Platzhalter. */
+    setHandMapping(fn) { ai.handMapping = fn ?? placeholderHandMapping; },
+    /** Ansteuerung der Hand ein/aus (wie die Checkbox im Panel). */
+    get driveHand() { return ui.aiDriveHand.checked; },
+    set driveHand(on) { ui.aiDriveHand.checked = Boolean(on); },
   },
 };
 
