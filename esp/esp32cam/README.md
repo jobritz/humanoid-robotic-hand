@@ -12,6 +12,7 @@ The camera driver is managed by the ESP Component Manager (`espressif/esp32-came
 
 ## 2. Configure Wi-Fi
 Create a file `wifi_config.h` in the folder main and enter your WIFI credentials. Refer to the file `wifi_config.h.example`
+The actual `wifi_config.h` is ignored by Git and should not be committed. The GitHub Actions build copies the example file to `wifi_config.h`; placeholder credentials are sufficient because the workflow only compiles the project.
 
 ## 3. Build and flash
 
