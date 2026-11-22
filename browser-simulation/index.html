@@ -82,6 +82,26 @@
         <p id="ai-status" class="info"></p>
       </section>
 
+      <section>
+        <h2>Trainingsdaten aufnehmen</h2>
+        <div class="row">
+          <button id="rec-random">Zufallspose</button>
+          <button id="rec-save" class="primary">Speichern (Leertaste)</button>
+        </div>
+        <label>Label (optional, z. B. Gestenname)
+          <input id="rec-label" type="text" placeholder="z. B. faust" autocomplete="off" />
+        </label>
+        <label class="check"><input id="rec-auto" type="checkbox" checked /> Nach dem Speichern neue Zufallspose</label>
+        <div class="row">
+          <button id="rec-undo">Letztes löschen</button>
+          <button id="rec-clear">Alles verwerfen</button>
+        </div>
+        <div class="row">
+          <button id="rec-download">CSV herunterladen</button>
+        </div>
+        <p id="rec-info" class="info"></p>
+      </section>
+
       <section class="grow">
         <h2 id="controls-title">Steuerung</h2>
         <div id="controls"></div>
