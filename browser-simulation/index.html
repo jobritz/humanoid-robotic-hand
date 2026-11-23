@@ -101,44 +101,6 @@
         </div>
         <p id="rec-info" class="info"></p>
       </section>
-      <section>
-        <h2>ESP32-KI-Modell</h2>
-        <label>Modell (.tflite)
-          <select id="ai-model-select"></select>
-        </label>
-        <div class="row">
-          <button id="ai-toggle">Modell starten</button>
-          <button id="ai-open">Datei öffnen…</button>
-        </div>
-        <input id="ai-file-input" type="file" accept=".tflite" hidden />
-        <p id="ai-info" class="info">Wertet die Kamerabilder wie die Firmware in <code>esp/esp32ai</code> aus (LiteRT.js).</p>
-        <div id="ai-result" hidden>
-          <canvas id="ai-input" title="Eingabebild des Modells"></canvas>
-          <div id="ai-outputs"></div>
-        </div>
-        <label><input id="ai-drive-hand" type="checkbox" /> Ausgaben steuern die Hand (Platzhalter)</label>
-        <p id="ai-status" class="info"></p>
-      </section>
-
-      <section>
-        <h2>Trainingsdaten aufnehmen</h2>
-        <div class="row">
-          <button id="rec-random">Zufallspose</button>
-          <button id="rec-save" class="primary">Speichern (Leertaste)</button>
-        </div>
-        <label>Label (optional, z. B. Gestenname)
-          <input id="rec-label" type="text" placeholder="z. B. faust" autocomplete="off" />
-        </label>
-        <label class="check"><input id="rec-auto" type="checkbox" checked /> Nach dem Speichern neue Zufallspose</label>
-        <div class="row">
-          <button id="rec-undo">Letztes löschen</button>
-          <button id="rec-clear">Alles verwerfen</button>
-        </div>
-        <div class="row">
-          <button id="rec-download">CSV herunterladen</button>
-        </div>
-        <p id="rec-info" class="info"></p>
-      </section>
 
       <section class="grow">
         <h2 id="controls-title">Steuerung</h2>
