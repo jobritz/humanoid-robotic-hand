@@ -112,7 +112,7 @@ export function webcamResolution(frameSize) {
 // ---------------------------------------------------------------------------
 
 // YUV nach BT.601 im vollen Wertebereich 0…255 (wie JPEG/JFIF und die Graustufen-Umrechnung gängiger ML-Bibliotheken).
-const luma = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+export const luma = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
 const chromaU = (r, g, b) => 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
 const chromaV = (r, g, b) => 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
