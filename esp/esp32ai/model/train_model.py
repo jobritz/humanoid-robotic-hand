@@ -296,8 +296,8 @@ def evaluate_int8(interp, inp, out, x, y):
 def main():
     p = argparse.ArgumentParser(description="Trainiert das Hand-Gesten-Modell fuer den ESP32.")
     p.add_argument("--data", type=Path, required=True, help="Ordner mit einem Unterordner pro Klasse")
-    p.add_argument("--width", type=int, default=64, help="Modell-Input Breite (= kInputWidth)")
-    p.add_argument("--height", type=int, default=48, help="Modell-Input Hoehe (= kInputHeight)")
+    p.add_argument("--width", type=int, default=80, help="Modell-Input Breite (= kInputWidth)")
+    p.add_argument("--height", type=int, default=60, help="Modell-Input Hoehe (= kInputHeight)")
     p.add_argument("--epochs", type=int, default=300)
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--patience", type=int, default=80,

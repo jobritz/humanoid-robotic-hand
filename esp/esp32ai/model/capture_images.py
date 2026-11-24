@@ -30,7 +30,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-QVGA = (64, 48) # 320x240 / 5
+QVGA = (320, 240)
 
 
 def to_qvga_gray(frame: np.ndarray) -> np.ndarray:
@@ -48,7 +48,7 @@ def to_qvga_gray(frame: np.ndarray) -> np.ndarray:
 def main():
     p = argparse.ArgumentParser(description="Trainingsbilder fuer das Hand-Modell aufnehmen.")
     p.add_argument("--source", default="0", help="Webcam-Nummer oder URL der ESP32-CAM")
-    p.add_argument("--classes", nargs="+", default=["rock", "scissors", "paper", "nothing"],
+    p.add_argument("--classes", nargs="+", default=["stein", "schere", "papier", "nichts"],
                    help="Namen der Klassen (Taste 1 = erste Klasse, ...)")
     p.add_argument("--data", type=Path, default=Path("data"), help="Zielordner")
     p.add_argument("--interval", type=float, default=0.15,
