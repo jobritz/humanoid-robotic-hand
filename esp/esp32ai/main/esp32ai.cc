@@ -31,9 +31,9 @@
 
 static const char *TAG = "esp32ai";
 
-constexpr size_t kArena = 32 * 1024; // 32 KB Tensor Arena in PSRAM
-constexpr int kInputWidth = 80;
-constexpr int kInputHeight = 60;
+constexpr size_t kArena = 48 * 1024; // 48 KB Tensor Arena in PSRAM
+constexpr int kInputWidth = 64;
+constexpr int kInputHeight = 48;
 constexpr size_t kInputSize = kInputWidth * kInputHeight;
 
 // Log the tensor's name, type, shape, number of bytes, scale, and zero point.

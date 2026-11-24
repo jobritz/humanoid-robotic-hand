@@ -12,6 +12,7 @@ import {
 import { HandTracker, drawHand } from './handTracking.js';
 import { Esp32Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './esp32Camera.js';
 import { Esp32Model, FIRMWARE_MODEL_URL } from './esp32Model.js';
+import firmwareLabelsText from '../../esp/esp32ai/model/output/labels.txt?raw';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -53,6 +54,11 @@ const ui = {
   aiDriveHand: $('ai-drive-hand'),
   aiStatus: $('ai-status'),
 };
+
+const firmwareLabels = firmwareLabelsText
+  .split(/\r?\n/)
+  .filter(Boolean)
+  .map((line) => line.replace(/^Output\[\d+\]\s*=\s*/, ''));
 
 const JOINT = { FREE: 0, BALL: 1, SLIDE: 2, HINGE: 3 };
 const MAX_STEPS_PER_FRAME = 200;
@@ -449,7 +455,7 @@ function placeholderHandMapping(values) {
 
 const ai = {
   /** Auswahl im Panel: Firmware-Modell und alle in dieser Sitzung geöffneten Dateien. */
-  sources: [{ label: 'Firmware: esp/esp32ai/hand.tflite', source: FIRMWARE_MODEL_URL, name: 'hand.tflite (Firmware)' }],
+  sources: [{ label: 'Firmware: hand.tflite', source: FIRMWARE_MODEL_URL, name: 'hand.tflite (Firmware)' }],
   model: null, // geladenes Esp32Model
   running: null, // laufende Auswertung (Promise) – solange verfallen neue Kamerabilder wie bei CAMERA_GRAB_LATEST
   enabled: false, // wertet Kamerabilder aus
@@ -529,7 +535,7 @@ function buildAiOutputs(count) {
     const wrap = document.createElement('div');
     wrap.className = 'control';
     wrap.innerHTML = `<div class="control-head"><span></span><output>–</output></div><div class="ai-bar"><span></span></div>`;
-    wrap.querySelector('span').textContent = ai.labels[i] ?? `Output[${i}]`;
+    wrap.querySelector('span').textContent = firmwareLabels[i] ?? `Output[${i}]`;
     return { wrap, output: wrap.querySelector('output'), bar: wrap.querySelector('.ai-bar span') };
   });
   ui.aiOutputs.replaceChildren(...ai.bars.map((b) => b.wrap));
