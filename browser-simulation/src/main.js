@@ -464,8 +464,8 @@ const WINNING_POSES = {
   scissors: {
     name: 'Schere',
     controls: {
-      index_flex: 1.571, index_abd: 0.157,
-      middle_flex: 1.571, middle_abd: -0.157,
+      index_flex: 0, index_abd: 0.157,
+      middle_flex: 0, middle_abd: -0.157,
       ring_flex: 1.571, ring_abd: 0,
       thumb_flex: 1.571, thumb_abd: 0,
     },
