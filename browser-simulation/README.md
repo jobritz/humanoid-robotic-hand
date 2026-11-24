@@ -59,7 +59,7 @@ Mitgelieferte Modelle:
 | Geom-Gruppen | Ein-/Ausblenden von Geom-Gruppen (Standard: 0–2 sichtbar, Kollisions-Geoms oft in Gruppe 3) |
 | Kamera aktivieren / beenden | Startet bzw. stoppt Kamera und Hand-Tracking, Vorschau unten rechts (siehe nächster Abschnitt) |
 | Auflösung, Farbcodierung, JPEG-Qualität | Kamera wie beim ESP32 einstellen (`frame_size`, `pixel_format`, `jpeg_quality`), wirkt sofort |
-| ESP32-KI-Modell | Modell wählen oder `.tflite` öffnen, starten/stoppen, Ausgaben ansehen, optional die Hand ansteuern (siehe [ESP32-KI-Modell testen](#esp32-ki-modell-testen)) |
+| ESP32-KI-Modell | Modell wählen oder `.tflite` öffnen, starten/stoppen, Ausgaben ansehen und die Hand passend zur erkannten Schere-Stein-Papier-Pose bewegen (siehe [ESP32-KI-Modell testen](#esp32-ki-modell-testen)) |
 | Maus | Linke Taste drehen, rechte Taste verschieben, Mausrad zoomen |
 
 ## Kamera & Hand-Tracking
@@ -212,6 +212,10 @@ wird. Standardmäßig wird direkt die Datei der Firmware geladen (`esp/esp32ai/h
    die genauen Abläufe noch nicht feststehen, beugt Ausgabe *i* (0…1) einfach Finger *i* (Zeige-, Mittel-, Ringfinger,
    Daumen) von 0 bis 90°. Die Abbildung steht in `placeholderHandMapping()` in [`src/main.js`](src/main.js) und lässt sich
    per `window.sim.esp32Model.setHandMapping()` ersetzen (siehe unten).
+6. **Schere, Stein, Papier gewinnen:** Die erkannte Pose wird als gegnerische Geste behandelt. Die Hand zeigt die
+   gewinnende Gegenpose: Papier gegen Stein, Schere gegen Papier und Stein gegen Schere. Dafür braucht das Modell
+   Ausgaben mit den Labels `rock`, `paper` und `scissors` (oder `Stein`, `Papier` und `Schere`). Die Klasse `nothing`
+   bzw. `nichts` lässt die Hand unverändert. Die Bewegung wirkt im Physik-Modus.
 
 **Was genau wie in der Firmware passiert** (`preprocess_frame()` und `run_model()` in
 [`esp32ai.cc`](../esp/esp32ai/main/esp32ai.cc)):
@@ -323,8 +327,9 @@ geladen (dafür erlaubt `vite.config.js` dem Dev-Server den Zugriff auf diesen O
   (nächster Schritt: `window.sim.hand` → Gelenkwinkel → `window.sim.setJoints`). Es wird eine Hand verfolgt; die
   Tiefenwerte sind relativ zur Hand, der absolute Abstand zur Kamera wird nicht geschätzt.
 - Die Hand-Erkennung läuft im Haupt-Thread des Browsers. Ohne GPU-Beschleunigung bremst sie die Simulation spürbar.
-- ESP32-KI-Modell: Die Ansteuerung der Hand aus den Modellausgaben ist ein Platzhalter, bis die Abläufe feststehen.
-  Größe der Tensor-Arena und registrierte Operatoren des ESP32 werden nicht geprüft (siehe
+- ESP32-KI-Modell: Die allgemeine Ansteuerung der Hand aus den Modellausgaben ist ein Platzhalter; der
+  Schere-Stein-Papier-Gewinnmodus setzt die Labels `rock`, `paper`, `scissors` und `nothing` voraus. Größe der Tensor-Arena
+  und registrierte Operatoren des ESP32 werden nicht geprüft (siehe
   [ESP32-KI-Modell testen](#esp32-ki-modell-testen)). Bei Modellen mit mehreren Ausgabetensoren wird angenommen, dass
   LiteRT.js sie in der Reihenfolge des Modells liefert.
 - Die ESP32-Nachbildung läuft ebenfalls im Haupt-Thread. Bis VGA kostet sie kaum Zeit (gemessen mit Intel Iris Xe:
