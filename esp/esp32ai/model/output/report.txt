@@ -1,7 +1,7 @@
 Klassen (4): Output[0]=nothing, Output[1]=paper, Output[2]=rock, Output[3]=scissors
 Input: 64x48 Graustufen
-Testgenauigkeit float-Modell: 99.3%
-Testgenauigkeit int8-Modell (wie auf ESP32): 99.3%
+Testgenauigkeit float-Modell: 92.0%
+Testgenauigkeit int8-Modell (wie auf ESP32): 80.9%
 Modellgroesse: 183,112 Bytes
 Operatoren: CONV_2D, DEPTHWISE_CONV_2D, FULLY_CONNECTED, LOGISTIC, MEAN
 Arena-Schaetzung (grob): ~19.0 KB von 32 KB (kArena)
