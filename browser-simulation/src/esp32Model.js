@@ -5,7 +5,7 @@
 import { loadLiteRt, loadAndCompile, Tensor } from '@litertjs/core';
 import { readTfliteInfo, withStaticShapes } from './tfliteInfo.js';
 import { decodeFrame, luma } from './esp32Camera.js';
-import firmwareModelUrl from '../../esp/esp32ai/model/output/hand.tflite?url';
+import firmwareModelUrl from '../../model/output/hand.tflite?url';
 
 /** Modell der Firmware – dieselbe Datei, die create_model.py erzeugt und die in main/model.cc eingebettet ist. */
 export const FIRMWARE_MODEL_URL = firmwareModelUrl;

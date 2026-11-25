@@ -12,7 +12,7 @@ import {
 import { HandTracker, drawHand } from './handTracking.js';
 import { Esp32Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './esp32Camera.js';
 import { Esp32Model, FIRMWARE_MODEL_URL } from './esp32Model.js';
-import firmwareLabelsText from '../../esp/esp32ai/model/output/labels.txt?raw';
+import firmwareLabelsText from '../../model/output/labels.txt?raw';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
