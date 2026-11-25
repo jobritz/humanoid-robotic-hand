@@ -235,5 +235,5 @@ sdkconfig.old
 **/managed_components/**
 
 # Trainingsdaten: Unterordner bleiben erhalten, Dateien werden lokal ignoriert
-/esp/esp32ai/model/data/*/*
-!/esp/esp32ai/model/data/*/.gitkeep
+/model/data/*/*
+!model/data/*/.gitkeep
