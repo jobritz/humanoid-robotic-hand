@@ -70,8 +70,7 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
-    // Die KI-Modelle werden direkt aus dem Ordner model/ geladen (Bildmodell model/output, Gesten-Modell
-    // model/gesture/output), nicht kopiert.
+    // Das Gesten-Modell wird direkt aus model/gesture/output geladen, nicht kopiert.
     fs: { allow: ['.', '../model'] },
   },
 });

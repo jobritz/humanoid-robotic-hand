@@ -49,42 +49,6 @@
         <p id="camera-info" class="info">Erkennt die eigene Hand live (MediaPipe).</p>
         <label class="check"><input id="camera-follow" type="checkbox" checked /> Simulierte Hand folgt der echten Hand</label>
         <p id="camera-actuators" class="info"></p>
-        <p class="hint">Bild wie von der ESP32-CAM (OV2640), Einstellungen wie in <code>camera_config_t</code>:</p>
-        <label>Auflösung (frame_size)
-          <select id="camera-framesize"></select>
-        </label>
-        <label>Farbcodierung (pixel_format)
-          <select id="camera-pixformat"></select>
-        </label>
-        <div id="camera-quality-row" class="control">
-          <div class="control-head">
-            <span>JPEG-Qualität (jpeg_quality, 0 = beste)</span><output id="camera-quality-value"></output>
-          </div>
-          <input id="camera-quality" type="range" min="0" max="63" step="1" />
-        </div>
-        <p id="camera-frame-info" class="info"></p>
-      </section>
-
-      <section>
-        <h2>ESP32-KI-Modell</h2>
-        <label>Modell (.tflite)
-          <select id="ai-model-select"></select>
-        </label>
-        <div class="row">
-          <button id="ai-toggle">Modell starten</button>
-          <button id="ai-open">Datei öffnen…</button>
-        </div>
-        <input id="ai-file-input" type="file" accept=".tflite" hidden />
-        <p id="ai-info" class="info">Wertet die Kamerabilder wie die Firmware in <code>esp/esp32ai/model/output</code> aus (LiteRT.js).</p>
-        <div id="ai-result" hidden>
-          <canvas id="ai-input" title="Eingabebild des Modells"></canvas>
-          <div id="ai-outputs"></div>
-        </div>
-        <label><input id="ai-drive-hand" type="checkbox" /> Ausgaben steuern die Hand (Platzhalter)</label>
-        <div class="row">
-          <button id="ai-win" class="primary">Schere, Stein, Papier gewinnen</button>
-        </div>
-        <p id="ai-status" class="info"></p>
       </section>
 
       <section>
@@ -108,6 +72,9 @@
         <div id="gesture-result" hidden>
           <p id="gesture-detected" class="gesture-detected"></p>
           <div id="gesture-outputs"></div>
+        </div>
+        <div class="row">
+          <button id="gesture-win" class="primary">Schere, Stein, Papier gewinnen</button>
         </div>
         <p id="gesture-status" class="info"></p>
       </section>
@@ -148,7 +115,6 @@
       <div id="drop-overlay" hidden>Modellordner hier ablegen</div>
       <div id="camera-preview" hidden>
         <video id="camera-video" autoplay muted playsinline></video>
-        <canvas id="camera-frame"></canvas>
         <canvas id="camera-overlay"></canvas>
       </div>
     </main>

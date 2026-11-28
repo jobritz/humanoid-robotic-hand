@@ -1,8 +1,26 @@
 // Gesten-Modell mit Aktuator-Stellungen als Eingabe (SCRUM-37, erzeugt mit model/gesture/train_gesture_model.py):
-// 8 Werte in rad rein, je Geste eine Wahrscheinlichkeit raus. Läuft wie das Bildmodell mit LiteRT.js.
-import { loadAndCompile, Tensor } from '@litertjs/core';
+// 8 Werte in rad rein, je Geste eine Wahrscheinlichkeit raus. Läuft im Browser mit LiteRT.js.
+import { loadLiteRt, loadAndCompile, Tensor } from '@litertjs/core';
 import { readTfliteInfo, withStaticShapes } from './tfliteInfo.js';
-import { getLiteRt, readBytes } from './esp32Model.js';
+
+let liteRtPromise;
+
+/** Lädt die WASM-Laufzeit von LiteRT.js genau einmal (bereitgestellt unter /litert/, siehe vite.config.js). */
+function getLiteRt() {
+  liteRtPromise ??= loadLiteRt(`${import.meta.env.BASE_URL}litert/`).catch((err) => {
+    liteRtPromise = undefined; // beim nächsten Versuch erneut laden
+    throw new Error(`LiteRT.js konnte nicht geladen werden: ${err?.message ?? err}`, { cause: err });
+  });
+  return liteRtPromise;
+}
+
+async function readBytes(source) {
+  if (source instanceof Uint8Array) return source;
+  if (source instanceof Blob) return new Uint8Array(await source.arrayBuffer());
+  const res = await fetch(source);
+  if (!res.ok) throw new Error(`Modell nicht gefunden: ${source} (HTTP ${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
+}
 
 /** Reihenfolge der Eingabe – wie ACTUATORS in model/gesture/gesture_common.py und die Aktuatoren in MuJoCo.xml. */
 export const GESTURE_INPUTS = [
@@ -83,7 +101,7 @@ function checkInput({ inputs }) {
   if (shape.length !== 2 || shape[0] !== 1 || shape[1] !== GESTURE_INPUTS.length) {
     throw new Error(
       `Eingabe [${shape}] passt nicht – erwartet wird [1, ${GESTURE_INPUTS.length}] (Aktuator-Stellungen). ` +
-        'Bildmodelle gehören in den Bereich „ESP32-KI-Modell“.',
+        'Ist das vielleicht ein Bildmodell?',
     );
   }
   if (!['float32', 'int8', 'uint8'].includes(dtype)) throw new Error(`Eingabetyp ${dtype} nicht unterstützt.`);

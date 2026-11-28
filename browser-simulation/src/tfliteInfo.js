@@ -1,14 +1,14 @@
 // Liest und korrigiert .tflite-Dateien (FlatBuffer nach tensorflow/lite/schema/schema.fbs):
 // - readTfliteInfo: Ein- und Ausgaben mit Form, Datentyp und Quantisierung sowie die verwendeten Operatoren.
-//   LiteRT.js gibt scale/zero_point nicht heraus, ohne sie lassen sich INT8-Modelle aber nicht wie auf dem ESP32
+//   LiteRT.js gibt scale/zero_point nicht heraus, ohne sie lassen sich quantisierte (int8-)Modelle aber nicht richtig
 //   befüllen und auswerten.
-// - withStaticShapes: legt dynamische Dimensionen (z. B. Batch -1 aus Keras) auf die feste Form fest – wie TFLM auf
-//   dem ESP32, das nur Tensor.shape verwendet. LiteRT.js lehnt Eingaben sonst ab.
+// - withStaticShapes: legt dynamische Dimensionen (z. B. Batch -1 aus Keras) auf die feste Form fest.
+//   LiteRT.js lehnt Eingaben sonst ab.
 
 /** TensorType aus schema.fbs (Index = Wert), als Namen wie bei LiteRT.js. */
 const TENSOR_TYPES = ['float32', 'float16', 'int32', 'uint8', 'int64', 'string', 'bool', 'int16', 'complex64', 'int8'];
 
-/** Häufige BuiltinOperator-Werte aus schema.fbs; die Namen entsprechen den Add…()-Aufrufen im MicroMutableOpResolver. */
+/** Häufige BuiltinOperator-Werte aus schema.fbs. */
 const OPERATORS = {
   0: 'ADD', 1: 'AVERAGE_POOL_2D', 2: 'CONCATENATION', 3: 'CONV_2D', 4: 'DEPTHWISE_CONV_2D', 6: 'DEQUANTIZE',
   9: 'FULLY_CONNECTED', 14: 'LOGISTIC', 17: 'MAX_POOL_2D', 18: 'MUL', 19: 'RELU', 21: 'RELU6', 22: 'RESHAPE',

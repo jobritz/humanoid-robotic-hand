@@ -1,5 +1,5 @@
 // Einstiegspunkt der Web-Oberfläche: Modell laden, Simulation laufen lassen, Gelenke/Aktuatoren steuern,
-// Hand per (wie beim ESP32 eingestellter) Kamera erkennen, KI-Modelle für den ESP32 auf den Kamerabildern testen.
+// Hand per Webcam erkennen, in Aktuator-Stellungen umrechnen und daraus mit dem Gesten-Modell die Geste erkennen.
 import { Renderer } from './renderer.js';
 import {
   getMujoco,
@@ -10,9 +10,7 @@ import {
   findEntryCandidates,
 } from './mujoco.js';
 import { HandTracker, drawHand } from './handTracking.js';
-import { Esp32Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './esp32Camera.js';
-import { Esp32Model, FIRMWARE_MODEL_URL } from './esp32Model.js';
-import firmwareLabelsText from '../../model/output/labels.txt?raw';
+import { Webcam } from './webcam.js';
 import {
   GestureModel,
   GESTURE_INPUTS,
@@ -44,27 +42,9 @@ const ui = {
   cameraInfo: $('camera-info'),
   cameraFollow: $('camera-follow'),
   cameraActuators: $('camera-actuators'),
-  cameraFrameSize: $('camera-framesize'),
-  cameraPixelFormat: $('camera-pixformat'),
-  cameraQualityRow: $('camera-quality-row'),
-  cameraQuality: $('camera-quality'),
-  cameraQualityValue: $('camera-quality-value'),
-  cameraFrameInfo: $('camera-frame-info'),
   cameraPreview: $('camera-preview'),
   cameraVideo: $('camera-video'),
-  cameraFrame: $('camera-frame'),
   cameraOverlay: $('camera-overlay'),
-  aiModelSelect: $('ai-model-select'),
-  aiToggle: $('ai-toggle'),
-  aiOpen: $('ai-open'),
-  aiFileInput: $('ai-file-input'),
-  aiInfo: $('ai-info'),
-  aiResult: $('ai-result'),
-  aiInput: $('ai-input'),
-  aiOutputs: $('ai-outputs'),
-  aiDriveHand: $('ai-drive-hand'),
-  aiWin: $('ai-win'),
-  aiStatus: $('ai-status'),
   gestureModelSelect: $('gesture-model-select'),
   gestureSource: $('gesture-source'),
   gestureToggle: $('gesture-toggle'),
@@ -75,12 +55,8 @@ const ui = {
   gestureDetected: $('gesture-detected'),
   gestureOutputs: $('gesture-outputs'),
   gestureStatus: $('gesture-status'),
+  gestureWin: $('gesture-win'),
 };
-
-const firmwareLabels = firmwareLabelsText
-  .split(/\r?\n/)
-  .filter(Boolean)
-  .map((line) => line.replace(/^Output\[\d+\]\s*=\s*/, ''));
 
 const JOINT = { FREE: 0, BALL: 1, SLIDE: 2, HINGE: 3 };
 const MAX_STEPS_PER_FRAME = 200;
@@ -349,14 +325,9 @@ const HANDEDNESS = { Left: 'Linke', Right: 'Rechte' };
 const BYTES = new Intl.NumberFormat('de-DE');
 
 const tracker = new HandTracker();
-const camera = new Esp32Camera(ui.cameraVideo, ui.cameraFrame, {
-  onFrame(frame) {
-    updateFrameInfo();
-    // Kleine Auflösungen pixelgenau vergrößern (siehe style.css).
-    ui.cameraFrame.classList.toggle('pixelated', ui.cameraFrame.clientWidth * devicePixelRatio >= 2 * frame.width);
-    if (tracker.ready) trackHand(frame); // sonst wird das Handmodell noch geladen
-    // Erst nach dem Hand-Tracking, damit dessen Rechenzeit nicht in die gemessene Zeit des KI-Modells fällt.
-    runEsp32Model(frame);
+const camera = new Webcam(ui.cameraVideo, {
+  onFrame(video, timestamp) {
+    if (tracker.ready) trackHand(video, timestamp); // sonst wird das Handmodell noch geladen
   },
   onError(err) {
     console.error(err);
@@ -368,22 +339,21 @@ const camera = new Esp32Camera(ui.cameraVideo, ui.cameraFrame, {
 /** Glättet die Ansteuerung der simulierten Hand (nicht die Eingabe des Gesten-Modells, die bleibt ungeglättet). */
 const followSmoother = new Smoother(0.5);
 
-function trackHand(frame) {
-  // Erkannt wird auf dem angezeigten Kamerabild, also auf dem, was der ESP32 liefern würde.
-  const hand = tracker.detect(ui.cameraFrame, frame.timestamp);
+function trackHand(video, timestamp) {
+  const hand = tracker.detect(video, timestamp);
   state.hand = hand;
   // Landmarken → 8 Aktuator-Stellungen, gleiche Rechnung wie auf dem Raspberry Pi (hand_mapping.py).
   state.handActuators = hand ? landmarksToActuators(hand.worldLandmarks) : null;
   showHandActuators();
-  // Steuert das Bildmodell die Hand (Gewinnmodus oder „Ausgaben steuern die Hand“), hat es Vorrang.
-  const aiDrivesHand = ai.winEnabled || (ai.enabled && ui.aiDriveHand.checked);
+  // Im Gewinnmodus steuert das Gesten-Modell die Hand (Gegenpose), dann folgt sie nicht der Kamera.
   if (!hand) followSmoother.reset();
-  else if (ui.cameraFollow.checked && state.model && !aiDrivesHand) {
+  else if (ui.cameraFollow.checked && state.model && !gestureState.winEnabled) {
     const values = followSmoother.next(state.handActuators);
     setControls(Object.fromEntries(GESTURE_INPUTS.map((name, i) => [name, values[i]])));
   }
   drawHand(ui.cameraOverlay, hand);
-  const rate = `${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
+  const { width, height } = camera.resolution ?? {};
+  const rate = `${width}×${height} · ${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
   setCameraInfo(
     hand
       ? `${HANDEDNESS[hand.handedness] ?? hand.handedness} Hand erkannt (${Math.round(hand.score * 100)} %) · ${rate}`
@@ -433,8 +403,6 @@ function setCameraActive(active) {
     state.handActuators = null;
     showHandActuators();
     drawHand(ui.cameraOverlay, null);
-    updateFrameInfo();
-    showAiWaiting();
   }
 }
 
@@ -443,51 +411,9 @@ function setCameraInfo(text, isError = false) {
   ui.cameraInfo.classList.toggle('error', isError);
 }
 
-/** Übernimmt eine (Teil-)Einstellung der Kamera, auch während sie läuft; wirft bei ungültigen Werten. */
-function setCameraConfig(changes) {
-  camera.setConfig(changes);
-  showCameraConfig();
-}
-
-function showCameraConfig() {
-  const { frameSize, pixelFormat, jpegQuality } = camera.config;
-  ui.cameraFrameSize.value = frameSize;
-  ui.cameraPixelFormat.value = pixelFormat;
-  ui.cameraQuality.value = jpegQuality;
-  ui.cameraQualityValue.textContent = jpegQuality;
-  ui.cameraQualityRow.hidden = pixelFormat !== 'JPEG';
-  updateFrameInfo();
-}
-
-/** Größe des Kamerabildes (wie fb->len); bei laufender Kamera die des letzten Bildes und die Webcam-Auflösung. */
-function updateFrameInfo() {
-  const { frame, webcam, config } = camera;
-  if (frame) {
-    const source = `Webcam ${webcam.width}×${webcam.height}${webcam.upscaled ? ' (hochskaliert)' : ''}`;
-    ui.cameraFrameInfo.textContent =
-      `${frame.width}×${frame.height} ${frame.format}: ${BYTES.format(frame.len)} Byte pro Bild · ${source}`;
-    return;
-  }
-  const { width, height } = getFrameSize(config.frameSize);
-  const bytes = frameBufferSize(config);
-  ui.cameraFrameInfo.textContent =
-    `${width}×${height} ${config.pixelFormat}: ${bytes ? `${BYTES.format(bytes)} Byte pro Bild` : 'Größe je nach Bildinhalt'}`;
-}
-
-ui.cameraFrameSize.replaceChildren(
-  ...FRAME_SIZES.map((s) => new Option(`${s.name} – ${s.width}×${s.height}`, s.name)),
-);
-ui.cameraPixelFormat.replaceChildren(
-  ...PIXEL_FORMATS.map((f) => new Option(`${f.name} – ${f.description}`, f.name)),
-);
-showCameraConfig();
-
 // ---------------------------------------------------------------------------
-// ESP32-KI-Modell (siehe esp32Model.js)
+// Schere, Stein, Papier: Posen der simulierten Hand und Gegenpose zum Gewinnen
 // ---------------------------------------------------------------------------
-
-/** Fingerbeuger der Amazing Hand, der Reihe nach von den Modellausgaben angesteuert (Platzhalter). */
-const FLEX_ACTUATORS = ['index_flex', 'middle_flex', 'ring_flex', 'thumb_flex'];
 
 const WINNING_POSES = {
   rock: {
@@ -525,184 +451,6 @@ const COUNTER_POSES = {
   scissors: { gesture: 'rock', name: 'Stein' },
 };
 
-/**
- * Platzhalter für die Ansteuerung der Hand, bis die Abläufe feststehen: Ausgabe i (0…1) beugt Finger i (Zeige-,
- * Mittel-, Ringfinger, Daumen) von 0 bis 90°. Ersetzen mit window.sim.esp32Model.setHandMapping(fn).
- * @param {number[]} values Modellausgaben
- * @returns {Record<string, number>} Aktuator-Sollwerte in rad (wie window.sim.setControls)
- */
-function placeholderHandMapping(values) {
-  return Object.fromEntries(
-    FLEX_ACTUATORS.slice(0, values.length).map((name, i) => [name, Math.min(1, Math.max(0, values[i])) * (Math.PI / 2)]),
-  );
-}
-
-const ai = {
-  /** Auswahl im Panel: Firmware-Modell und alle in dieser Sitzung geöffneten Dateien. */
-  sources: [{ label: 'Firmware: hand.tflite', source: FIRMWARE_MODEL_URL, name: 'hand.tflite (Firmware)' }],
-  model: null, // geladenes Esp32Model
-  running: null, // laufende Auswertung (Promise) – solange verfallen neue Kamerabilder wie bei CAMERA_GRAB_LATEST
-  enabled: false, // wertet Kamerabilder aus
-  winEnabled: false, // zeigt die gewinnende Gegenpose zur erkannten Geste
-  result: null, // letztes Ergebnis { values, timestamp, preprocessMs, inferenceMs }
-  labels: [], // Beschriftung der Ausgaben, leer = Output[i] wie im seriellen Monitor des ESP32
-  handMapping: placeholderHandMapping,
-  bars: [], // Anzeige je Ausgabe { output, bar }
-};
-
-/** Lädt ein Modell und ersetzt das bisherige erst, wenn das neue fertig geladen ist. */
-async function loadAiModel(source, name) {
-  setAiInfo(`Lade ${name}…`);
-  ui.aiToggle.disabled = true;
-  try {
-    const model = await Esp32Model.load(source, { name });
-    const old = ai.model;
-    ai.model = null;
-    await ai.running; // laufende Auswertung des alten Modells abwarten, erst dann freigeben
-    old?.delete();
-    ai.model = model;
-    ai.result = null;
-    showAiModel();
-  } finally {
-    ui.aiToggle.disabled = false;
-  }
-}
-
-function loadSelectedAiModel() {
-  const { source, name } = ai.sources[ui.aiModelSelect.value];
-  return loadAiModel(source, name);
-}
-
-async function toggleAiModel() {
-  if (ai.enabled) return setAiEnabled(false);
-  if (!ai.model) await loadSelectedAiModel();
-  setAiEnabled(true);
-}
-
-function setAiEnabled(enabled) {
-  ai.enabled = enabled;
-  ui.aiToggle.textContent = enabled ? 'Modell stoppen' : 'Modell starten';
-  ui.aiResult.hidden = !enabled;
-  if (!enabled) setAiWinEnabled(false);
-  showAiWaiting();
-}
-
-function setAiWinEnabled(enabled) {
-  ai.winEnabled = enabled;
-  ui.aiWin.textContent = enabled ? 'Gewinnmodus beenden' : 'Schere, Stein, Papier gewinnen';
-  ui.aiDriveHand.disabled = enabled;
-}
-
-/** Hinweis, solange das Modell läuft, aber keine Kamerabilder kommen. */
-function showAiWaiting() {
-  ui.aiStatus.textContent = ai.enabled && !camera.running ? 'Wartet auf Kamerabilder – oben „Kamera aktivieren“.' : '';
-}
-
-function setAiInfo(text, isError = false) {
-  ui.aiInfo.textContent = text;
-  ui.aiInfo.classList.toggle('error', isError);
-}
-
-function showAiError(err) {
-  console.error(err);
-  setAiEnabled(false);
-  setAiInfo(err.message, true);
-}
-
-/** Eckdaten des Modells: Eingabe (wie kInputWidth/kInputHeight in der Firmware), Ausgaben, Operatoren. */
-function showAiModel() {
-  const { name, size, input, outputs, operators } = ai.model;
-  const quant = input.scale ? `, scale ${input.scale}, zero_point ${input.zeroPoint}` : '';
-  const count = outputs.reduce((n, o) => n + o.shape.reduce((a, b) => a * b, 1), 0);
-  setAiInfo(
-    `${name}, ${BYTES.format(size)} Byte · Eingabe ${input.width}×${input.height}×${input.channels} ` +
-      `${input.dtype}${quant} · ${count} Ausgaben · Operatoren: ${operators.join(', ')}`,
-  );
-  Object.assign(ui.aiInput, { width: input.width, height: input.height });
-  buildAiOutputs(count);
-}
-
-function buildAiOutputs(count) {
-  const labels = ai.labels.length ? ai.labels : firmwareLabels;
-  ai.bars = Array.from({ length: count }, (_, i) => {
-    const wrap = document.createElement('div');
-    wrap.className = 'control';
-    wrap.innerHTML = `<div class="control-head"><span></span><output>–</output></div><div class="ai-bar"><span></span></div>`;
-    wrap.querySelector('span').textContent = labels[i] ?? `Output[${i}]`;
-    return { wrap, output: wrap.querySelector('output'), bar: wrap.querySelector('.ai-bar span') };
-  });
-  ui.aiOutputs.replaceChildren(...ai.bars.map((b) => b.wrap));
-}
-
-/** Wertet ein Kamerabild aus, sofern das Modell läuft und gerade frei ist. */
-function runEsp32Model(frame) {
-  const { model } = ai;
-  if (!ai.enabled || !model || ai.running) return;
-  ai.running = model
-    .run(frame)
-    .then((result) => {
-      if (ai.model === model && ai.enabled) showAiResult(result, frame);
-    })
-    .catch((err) => showAiError(new Error(`Auswertung fehlgeschlagen: ${err?.message ?? err}`, { cause: err })))
-    .finally(() => {
-      ai.running = null;
-    });
-}
-
-function showAiResult(result, frame) {
-  const { input } = ai.model;
-  if (!result) {
-    ui.aiStatus.textContent =
-      `Kamerabild ${frame.width}×${frame.height} ist kleiner als die Modelleingabe ${input.width}×${input.height} – ` +
-      'größere Auflösung wählen (die Firmware würde das Bild ebenfalls ablehnen).';
-    return;
-  }
-  const { values, pixels, preprocessMs, inferenceMs } = result;
-  ai.result = { values, timestamp: frame.timestamp, preprocessMs, inferenceMs };
-  values.forEach((v, i) => {
-    if (!ai.bars[i]) return;
-    ai.bars[i].output.textContent = v.toFixed(3);
-    ai.bars[i].bar.style.width = `${Math.min(1, Math.max(0, v)) * 100}%`; // Balken für Werte 0…1
-  });
-  drawModelInput(pixels, input);
-  let status =
-    `${(preprocessMs + inferenceMs).toFixed(1)} ms pro Bild ` +
-    `(Vorverarbeitung ${preprocessMs.toFixed(1)} ms, Modell ${inferenceMs.toFixed(1)} ms im Browser)`;
-  if (ui.aiDriveHand.checked && state.model && !ai.winEnabled) setControls(ai.handMapping(values));
-  if (ai.winEnabled && state.model) {
-    const labels = ai.labels.length ? ai.labels : firmwareLabels;
-    const index = values.reduce((best, value, i, all) => (value > all[best] ? i : best), 0);
-    const label = labels[index]?.trim().toLowerCase();
-    const gesture = ({ stein: 'rock', rock: 'rock', papier: 'paper', paper: 'paper', schere: 'scissors', scissors: 'scissors' })[label];
-    if (gesture) {
-      const counter = COUNTER_POSES[gesture];
-      setControls(WINNING_POSES[counter.gesture].controls);
-      status += ` · Erkannt: ${WINNING_POSES[gesture].name} → Hand: ${counter.name}`;
-    } else if (label === 'nothing' || label === 'nichts') {
-      status += ' · Keine Hand erkannt; warte auf eine Pose.';
-    } else {
-      status += ' · Pose nicht unterstützt; prüfe die Modell-Labels.';
-    }
-  }
-  ui.aiStatus.textContent = status;
-}
-
-/** Zeigt das Bild, wie es das Modell bekommt (nach Zuschnitt und Verkleinerung). */
-function drawModelInput(pixels, { width, height, channels }) {
-  const image = new ImageData(width, height);
-  for (let i = 0; i < width * height; i++) {
-    const p = i * channels;
-    image.data.set(channels === 1 ? [pixels[p], pixels[p], pixels[p], 255] : [...pixels.subarray(p, p + 3), 255], 4 * i);
-  }
-  ui.aiInput.getContext('2d').putImageData(image, 0, 0);
-}
-
-function fillAiModelSelect(selected = 0) {
-  ui.aiModelSelect.replaceChildren(...ai.sources.map((s, i) => new Option(s.label, i, false, i === selected)));
-}
-
-fillAiModelSelect();
-
 // ---------------------------------------------------------------------------
 // Gesten-Modell mit Aktuator-Stellungen als Eingabe (siehe gestureModel.js)
 // ---------------------------------------------------------------------------
@@ -725,6 +473,7 @@ const gestureState = {
   running: null, // laufende Auswertung (Promise); solange wird kein neuer Durchlauf gestartet
   result: null, // { inputs, values, label, score, inferenceMs }
   bars: [],
+  winEnabled: false, // Gewinnmodus: simulierte Hand zeigt die Gegenpose zur erkannten Geste
 };
 
 /**
@@ -775,7 +524,10 @@ function setGestureEnabled(enabled) {
   gestureState.enabled = enabled;
   ui.gestureToggle.textContent = enabled ? 'Modell stoppen' : 'Modell starten';
   ui.gestureResult.hidden = !enabled;
-  if (!enabled) ui.gestureStatus.textContent = '';
+  if (!enabled) {
+    ui.gestureStatus.textContent = '';
+    setGestureWinEnabled(false);
+  }
 }
 
 function setGestureInfo(text, isError = false) {
@@ -797,10 +549,10 @@ function showGestureModel() {
   gestureState.bars = Array.from({ length: count }, (_, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'control';
-    wrap.innerHTML = `<div class="control-head"><span></span><output>–</output></div><div class="ai-bar"><span></span></div>`;
+    wrap.innerHTML = `<div class="control-head"><span></span><output>–</output></div><div class="prob-bar"><span></span></div>`;
     const label = gestureState.labels[i];
     wrap.querySelector('span').textContent = label ? (GESTURE_NAMES[label] ?? label) : `Output[${i}]`;
-    return { wrap, output: wrap.querySelector('output'), bar: wrap.querySelector('.ai-bar span') };
+    return { wrap, output: wrap.querySelector('output'), bar: wrap.querySelector('.prob-bar span') };
   });
   ui.gestureOutputs.replaceChildren(...gestureState.bars.map((b) => b.wrap));
 }
@@ -850,7 +602,24 @@ function showGestureResult(inputs, values, inferenceMs) {
   });
   ui.gestureDetected.textContent = `Erkannt: ${GESTURE_NAMES[label] ?? label} (${(values[best] * 100).toFixed(0)} %)`;
   const source = ui.gestureSource.value === 'camera' ? 'echte Hand (Kamera)' : 'simulierte Hand';
-  ui.gestureStatus.textContent = `Eingabe: ${source} · ${inferenceMs.toFixed(2)} ms pro Auswertung im Browser`;
+  let status = `Eingabe: ${source} · ${inferenceMs.toFixed(2)} ms pro Auswertung im Browser`;
+  if (gestureState.winEnabled && state.model) {
+    const counter = COUNTER_POSES[label];
+    if (counter) {
+      setControls(WINNING_POSES[counter.gesture].controls);
+      status += ` · Hand zeigt ${counter.name} und gewinnt`;
+    } else {
+      status += ' · Warte auf Stein, Schere oder Papier';
+    }
+  }
+  ui.gestureStatus.textContent = status;
+}
+
+/** Gewinnmodus: Die simulierte Hand zeigt die Geste, die gegen die erkannte Geste der echten Hand gewinnt. */
+function setGestureWinEnabled(enabled) {
+  gestureState.winEnabled = enabled;
+  ui.gestureWin.textContent = enabled ? 'Gewinnmodus beenden' : 'Schere, Stein, Papier gewinnen';
+  if (enabled) ui.gestureSource.value = 'camera';
 }
 
 function fillGestureModelSelect(selected = 0) {
@@ -879,37 +648,20 @@ document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', () => setMode(r.value)),
 );
 ui.cameraToggle.addEventListener('click', toggleCamera);
-ui.cameraFrameSize.addEventListener('change', () => setCameraConfig({ frameSize: ui.cameraFrameSize.value }));
-ui.cameraPixelFormat.addEventListener('change', () => setCameraConfig({ pixelFormat: ui.cameraPixelFormat.value }));
-ui.cameraQuality.addEventListener('input', () => setCameraConfig({ jpegQuality: Number(ui.cameraQuality.value) }));
 
-ui.aiToggle.addEventListener('click', () => toggleAiModel().catch(showAiError));
-ui.aiWin.addEventListener('click', async () => {
-  if (ai.winEnabled) {
-    setAiWinEnabled(false);
-    showAiWaiting();
-    return;
-  }
-  setAiWinEnabled(true);
+ui.gestureWin.addEventListener('click', async () => {
+  if (gestureState.winEnabled) return setGestureWinEnabled(false);
   try {
-    if (!ai.model) await loadSelectedAiModel();
-    setAiEnabled(true);
+    if (!gestureState.model) await loadSelectedGestureModel();
+    setGestureEnabled(true);
+    setGestureWinEnabled(true);
   } catch (err) {
-    setAiWinEnabled(false);
-    showAiError(err);
+    showGestureError(err);
   }
 });
-ui.aiModelSelect.addEventListener('change', () =>
-  loadSelectedAiModel().then(() => setAiEnabled(true)).catch(showAiError),
-);
-ui.aiOpen.addEventListener('click', () => ui.aiFileInput.click());
-ui.aiFileInput.addEventListener('change', () => {
-  const [file] = ui.aiFileInput.files;
-  ui.aiFileInput.value = '';
-  if (!file) return;
-  ai.sources.push({ label: `Datei: ${file.name}`, source: file, name: file.name });
-  fillAiModelSelect(ai.sources.length - 1);
-  loadSelectedAiModel().then(() => setAiEnabled(true)).catch(showAiError);
+ui.gestureSource.addEventListener('change', () => {
+  // Mit der simulierten Hand als Eingabe würde die Gegenpose sofort wieder als Geste erkannt.
+  if (ui.gestureSource.value !== 'camera') setGestureWinEnabled(false);
 });
 
 ui.gestureToggle.addEventListener('click', () => toggleGestureModel().catch(showGestureError));
@@ -983,17 +735,14 @@ window.sim = {
   get hand() { return state.hand; },
   /** Daraus berechnete 8 Aktuator-Stellungen in rad (Reihenfolge wie gestureModel.inputs) oder null. */
   get handActuators() { return state.handActuators; },
-  /** Kamera wie beim ESP32 (siehe esp32Camera.js). */
+  /** Webcam (siehe webcam.js). */
   camera: {
-    /** Einstellung { frameSize, pixelFormat, jpegQuality } – entspricht .frame_size, .pixel_format, .jpeg_quality. */
-    get config() { return { ...camera.config }; },
-    /** Letztes Kamerabild wie camera_fb_t ({ buf, len, width, height, format, timestamp }) oder null. */
-    get frame() { return camera.frame; },
-    /** Ändert die Einstellung, auch bei laufender Kamera, z. B. setConfig({ pixelFormat: 'GRAYSCALE' }). */
-    setConfig(changes) {
-      setCameraConfig(changes);
-      return { ...camera.config };
-    },
+    /** Läuft die Kamera? */
+    get running() { return camera.running; },
+    /** Tatsächliche Auflösung { width, height } oder null. */
+    get resolution() { return camera.resolution; },
+    /** Ausgewertete Bilder pro Sekunde. */
+    get fps() { return camera.fps; },
   },
   /** Setzt Gelenkwinkel (rad bzw. m) nach Name und aktualisiert die Kinematik. */
   setJoints(values) {
@@ -1007,37 +756,6 @@ window.sim = {
   },
   /** Setzt Aktuator-Sollwerte nach Name (wirksam im Physik-Modus). */
   setControls,
-  /** KI-Modell für den ESP32, ausgewertet auf den Kamerabildern (siehe esp32Model.js). */
-  esp32Model: {
-    /** Geladenes Modell { name, size, input, outputs, operators, inputRange } oder null. */
-    get info() {
-      const m = ai.model;
-      return m && { name: m.name, size: m.size, input: { ...m.input }, outputs: m.outputs, operators: m.operators, inputRange: m.inputRange };
-    },
-    /** Letztes Ergebnis { values, timestamp, preprocessMs, inferenceMs } oder null. */
-    get result() { return ai.result; },
-    /** Lädt ein Modell (URL, File oder Uint8Array) und startet es. */
-    async load(source, name = String(source)) {
-      await loadAiModel(source, name);
-      setAiEnabled(true);
-      return this.info;
-    },
-    /** Wertet ein eigenes Bild aus, aufgebaut wie camera_fb_t ({ buf, width, height, format }) – auch ohne Kamera. */
-    run(frame) {
-      if (!ai.model) throw new Error('Kein Modell geladen.');
-      return ai.model.run(frame);
-    },
-    /** Beschriftet die Ausgaben, z. B. setLabels(['offen', 'Faust', 'Zeigen']); [] = Output[i]. */
-    setLabels(labels) {
-      ai.labels = [...labels];
-      if (ai.model) buildAiOutputs(ai.bars.length);
-    },
-    /** Ersetzt die Ansteuerung der Hand: fn(values) → { aktuator: Sollwert in rad }; null = Platzhalter. */
-    setHandMapping(fn) { ai.handMapping = fn ?? placeholderHandMapping; },
-    /** Ansteuerung der Hand ein/aus (wie die Checkbox im Panel). */
-    get driveHand() { return ui.aiDriveHand.checked; },
-    set driveHand(on) { ui.aiDriveHand.checked = Boolean(on); },
-  },
   /** Gesten-Modell mit den 8 Aktuator-Stellungen als Eingabe (siehe gestureModel.js). */
   gestureModel: {
     /** Reihenfolge der Eingabe. */

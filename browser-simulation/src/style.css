@@ -133,7 +133,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.95em; }
 }
 #drop-overlay[hidden] { display: none; }
 
-/* Kleine Kameravorschau unten rechts: das nachgebildete ESP32-Kamerabild, deckungsgleich darüber die Landmarken. */
+/* Kleine Kameravorschau unten rechts: das Webcam-Bild, deckungsgleich darüber die Landmarken. */
 #camera-preview {
   position: absolute;
   right: 12px;
@@ -152,38 +152,17 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.95em; }
   width: 100%;
   transform: scaleX(-1);
 }
-/* Die Höhe ergibt sich aus der Auflösung des Kamerabildes (width/height der Canvas). */
-#camera-frame { position: relative; height: auto; }
-/* Kleine Auflösungen pixelgenau vergrößern, damit sichtbar bleibt, was ein Modell tatsächlich bekommt. */
-#camera-frame.pixelated { image-rendering: pixelated; }
-/* Das Video ist nur die Quelle der Nachbildung und liegt verdeckt unter dem Kamerabild statt ausgeblendet:
-   requestVideoFrameCallback ist laut Spezifikation an die Darstellung des Videos gekoppelt. */
-#camera-preview video,
+#camera-preview video { height: auto; aspect-ratio: auto 4 / 3; }
 #camera-overlay {
   position: absolute;
   inset: 0;
   height: 100%;
+  pointer-events: none;
 }
-#camera-preview video { object-fit: cover; }
-#camera-overlay { pointer-events: none; }
 
-/* ESP32-KI-Modell: links das Eingabebild des Modells (pixelgenau vergrößert), rechts ein Balken je Ausgabe. */
-#ai-result {
-  display: grid;
-  grid-template-columns: 96px 1fr;
-  gap: 10px;
-  align-items: start;
-  margin: 10px 0 8px;
-}
-#ai-input {
-  width: 100%;
-  transform: scaleX(-1); /* gespiegelt wie die Kameravorschau; das Modell bekommt das ungespiegelte Bild */
-  image-rendering: pixelated;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-.ai-bar { height: 6px; border-radius: 3px; background: #2a2e37; overflow: hidden; }
-.ai-bar span { display: block; height: 100%; background: var(--accent); }
+/* Balken je Ausgabe des Gesten-Modells. */
+.prob-bar { height: 6px; border-radius: 3px; background: #2a2e37; overflow: hidden; }
+.prob-bar span { display: block; height: 100%; background: var(--accent); }
 .gesture-detected { margin: 4px 0 8px; font-size: 16px; font-weight: 600; }
 label.check { color: var(--text); }
 

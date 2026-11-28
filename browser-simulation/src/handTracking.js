@@ -1,4 +1,4 @@
-// Hand-Erkennung mit dem MediaPipe Hand Landmarker auf den Bildern der (nachgebildeten) ESP32-Kamera.
+// Hand-Erkennung mit dem MediaPipe Hand Landmarker auf den Bildern der Webcam.
 // Läuft komplett im Browser (WASM + WebGL), das Kamerabild verlässt den Rechner nicht.
 import { HandLandmarker } from '@mediapipe/tasks-vision';
 // WASM-Laufzeit direkt aus dem npm-Paket: Vite liefert die Dateien aus bzw. kopiert sie beim Build (wie bei MuJoCo).
@@ -59,7 +59,7 @@ export class HandTracker {
     ({ landmarker: this.landmarker, delegate: this.delegate } = await getLandmarker());
   }
 
-  /** @param {TexImageSource} image z. B. die Canvas mit dem Kamerabild */
+  /** @param {TexImageSource} image z. B. das Video der Webcam */
   detect(image, timestamp) {
     this.lastTimestamp = Math.max(timestamp, this.lastTimestamp + 1); // MediaPipe verlangt streng steigende Zeitstempel
     try {
