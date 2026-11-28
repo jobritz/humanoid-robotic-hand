@@ -136,6 +136,17 @@ dependencies have been installed.
 3. The window displays the camera feed, detected hand skeleton, and estimated
    joint angles in degrees. Press **q** to quit.
 
+To run tracking without opening a preview window (for example, in a headless
+session), use:
+
+```bash
+python run_hand_tracking.py --no-display
+```
+
+In this mode, tracking continues until interrupted with **Ctrl+C**. The
+`hand_data` result is still produced for every camera frame and can be passed
+to another model in the script.
+
 `hand_tracker.py` can also be used independently of the viewer. Other Python
 scripts can import `HandTracker` and call `tracker.detect(frame)` for each
 OpenCV BGR frame. The method returns `None` when no hand is detected;
@@ -158,3 +169,24 @@ try:
 finally:
     camera.release()
 ```
+
+## Troubleshooting
+
+- `Error in cpuinfo: prctl(PR_SVE_GET_VL) failed` is a CPU-feature probe.
+  It can appear on Raspberry Pi processors that do not support SVE and does
+  not prevent tracking.
+- `Created TensorFlow Lite XNNPACK delegate for CPU` is an informational
+  message confirming that the CPU delegate is enabled.
+- MediaPipe's `Feedback manager requires a model with a single signature` and
+  `Using NORM_RECT without IMAGE_DIMENSIONS` messages are runtime warnings.
+  They do not prevent hand detection when the viewer is working.
+- If Qt reports that the `wayland` platform plugin is missing, the viewer now
+  selects the bundled `xcb` plugin when an XWayland display is available.
+  You can also set it explicitly when starting the program:
+
+  ```bash
+  QT_QPA_PLATFORM=xcb python run_hand_tracking.py
+  ```
+
+  This requires an XWayland display. If the viewer still cannot open, use a
+  desktop session supported by the installed OpenCV Qt plugins.
