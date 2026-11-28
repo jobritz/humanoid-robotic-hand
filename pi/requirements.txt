@@ -1,0 +1,13 @@
+# Python-Abhängigkeiten für den Gesture Recognizer auf dem Raspberry Pi.
+# Benötigt Python 3.11 oder 3.12 (nicht 3.13, siehe README.md).
+
+# Ältere 0.10.x-Versionen haben aarch64-Wheels, die auf dem Pi laufen.
+# pip wählt automatisch die neueste Version aus diesem Bereich, für die es ein
+# passendes Wheel gibt. Wenn du weißt, welche Version bei dir funktioniert,
+# kannst du sie fest pinnen (z. B. mediapipe==0.10.18).
+mediapipe>=0.10.9,<0.10.21
+
+# MediaPipe 0.10.x ist nicht mit NumPy 2 kompatibel
+numpy<2
+
+# opencv-contrib-python wird von mediapipe automatisch mitinstalliert
