@@ -52,11 +52,24 @@ class HandTracker:
         world_landmarks = result.hand_world_landmarks[0]
         category = result.handedness[0][0]
 
+        world_points = [
+            {"x": point.x, "y": point.y, "z": point.z}
+            for point in world_landmarks
+        ]
+        wrist = world_points[0]
+        relative_landmarks = [
+            {
+                "x": point["x"] - wrist["x"],
+                "y": point["y"] - wrist["y"],
+                "z": point["z"] - wrist["z"],
+            }
+            for point in world_points
+        ]
+
         return {
             "landmarks": [{"x": point.x, "y": point.y, "z": point.z} for point in landmarks],
-            "worldLandmarks": [
-                {"x": point.x, "y": point.y, "z": point.z} for point in world_landmarks
-            ],
+            "worldLandmarks": world_points,
+            "relativeLandmarks": relative_landmarks,
             "handedness": category.category_name,
             "score": category.score,
         }
@@ -107,9 +120,21 @@ def draw_hand(frame, hand_data):
     return frame
 
 
-def draw_landmark_table(hand_data):
-    """Render browser-compatible image and world landmarks in a separate panel."""
-    panel = np.full((520, 600, 3), 24, dtype=np.uint8)
+def draw_landmark_table(hand_data, coordinate_mode="relative"):
+    """Render the 21 joint coordinates beside the camera image."""
+    panel = np.full((480, 600, 3), 24, dtype=np.uint8)
+    mode_label = "Relative to wrist" if coordinate_mode == "relative" else "World coordinates"
+    cv2.rectangle(panel, (388, 8), (588, 38), (70, 130, 180), -1)
+    cv2.rectangle(panel, (388, 8), (588, 38), (220, 220, 220), 1)
+    cv2.putText(
+        panel,
+        "Show world" if coordinate_mode == "relative" else "Show relative",
+        (398, 29),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.48,
+        (255, 255, 255),
+        1,
+    )
     cv2.putText(
         panel,
         "MediaPipe landmarks",
@@ -119,11 +144,20 @@ def draw_landmark_table(hand_data):
         (255, 255, 255),
         1,
     )
+    cv2.putText(
+        panel,
+        mode_label,
+        (12, 56),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.42,
+        (180, 220, 180),
+        1,
+    )
     if hand_data is None:
         cv2.putText(
             panel,
             "No hand detected",
-            (12, 56),
+            (12, 82),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
             (255, 255, 255),
@@ -131,30 +165,28 @@ def draw_landmark_table(hand_data):
         )
         return panel
 
-    cv2.putText(
-        panel,
-        "Image x/y (0..1), z rel. wrist  |  World x/y/z (m)",
-        (12, 48),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.42,
-        (180, 220, 180),
-        1,
-    )
-    for index, (name, image_point, world_point) in enumerate(
-        zip(LANDMARK_NAMES, hand_data["landmarks"], hand_data["worldLandmarks"])
-    ):
+    coordinate_key = "relativeLandmarks" if coordinate_mode == "relative" else "worldLandmarks"
+    points = hand_data[coordinate_key]
+    for index, (name, point) in enumerate(zip(LANDMARK_NAMES, points)):
         text = (
             f"{index:02} {name:<11} "
-            f"{image_point['x']:+.3f} {image_point['y']:+.3f} {image_point['z']:+.3f}  "
-            f"{world_point['x']:+.3f} {world_point['y']:+.3f} {world_point['z']:+.3f}"
+            f"x {point['x']:+.3f}  y {point['y']:+.3f}  z {point['z']:+.3f}"
         )
         cv2.putText(
             panel,
             text,
-            (12, 70 + index * 20),
+            (12, 82 + index * 18),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.38,
+            0.40,
             (245, 245, 245),
             1,
         )
     return panel
+
+
+def draw_combined_surface(camera_frame, hand_data, coordinate_mode="relative"):
+    """Combine camera tracking and landmark coordinates in one image."""
+    camera = draw_hand(camera_frame, hand_data)
+    camera = cv2.resize(camera, (480, 480), interpolation=cv2.INTER_AREA)
+    landmarks = draw_landmark_table(hand_data, coordinate_mode)
+    return np.hstack((camera, landmarks))

@@ -10,7 +10,7 @@ if os.environ.get("WAYLAND_DISPLAY") and os.environ.get("DISPLAY"):
 
 import cv2
 
-from hand_tracker import HandTracker, draw_hand, draw_landmark_table
+from hand_tracker import HandTracker, draw_combined_surface
 
 
 def main():
@@ -22,6 +22,7 @@ def main():
         help="Run tracking without opening a preview window",
     )
     args = parser.parse_args()
+    coordinate_mode = {"value": "relative"}
 
     camera = cv2.VideoCapture(args.camera)
     if not camera.isOpened():
@@ -32,6 +33,20 @@ def main():
 
     try:
         with HandTracker() as tracker:
+            window_name = "MediaPipe Hand Tracking"
+            if not args.no_display:
+                cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+
+                def toggle_coordinates(event, x, y, _flags, _userdata):
+                    if event == cv2.EVENT_LBUTTONDOWN and 868 <= x <= 1068 and 8 <= y <= 38:
+                        coordinate_mode["value"] = (
+                            "world"
+                            if coordinate_mode["value"] == "relative"
+                            else "relative"
+                        )
+
+                cv2.setMouseCallback(window_name, toggle_coordinates)
+
             while True:
                 ok, frame = camera.read()
                 if not ok:
@@ -39,13 +54,21 @@ def main():
 
                 hand_data = tracker.detect(frame)
                 if not args.no_display:
-                    cv2.imshow(
-                        "MediaPipe Hand Tracking (press q to quit)",
-                        draw_hand(frame, hand_data),
+                    surface = draw_combined_surface(
+                        frame,
+                        hand_data,
+                        coordinate_mode["value"],
                     )
-                    cv2.imshow("Hand Landmarks", draw_landmark_table(hand_data))
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                    cv2.imshow(window_name, surface)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord("q") or key == 27:
                         break
+                    if key == ord("w"):
+                        coordinate_mode["value"] = (
+                            "world"
+                            if coordinate_mode["value"] == "relative"
+                            else "relative"
+                        )
     finally:
         camera.release()
         if not args.no_display:
