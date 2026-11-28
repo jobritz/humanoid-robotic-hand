@@ -55,6 +55,9 @@ Klasse „keine Geste“ (`nothing`) Stellungen aufnehmen, die keiner der Gesten
 python train_gesture_model.py --data aufnahme1.csv aufnahme2.csv
 ```
 
+> **Aktueller Stand:** `output/` enthält ein **Platzhalter-Modell**, trainiert mit künstlichen Daten (siehe
+> `output/PLATZHALTER.md`). Nach dem Training mit echten Aufnahmen `output/PLATZHALTER.md` löschen.
+
 Ergebnis in `output/`:
 
 - `gesture.tflite`: das Modell

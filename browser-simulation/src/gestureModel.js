@@ -22,6 +22,10 @@ export const BUNDLED_GESTURE_MODEL = Object.values(bundled)[0] ?? null;
 /** Beschriftung des mitgelieferten Modells aus labels.txt ("Output[i] = name"). */
 export const BUNDLED_GESTURE_LABELS = parseLabels(Object.values(bundledLabels)[0] ?? '');
 
+/** true, solange model/gesture/output/PLATZHALTER.md existiert (Modell nur mit künstlichen Daten trainiert). */
+export const BUNDLED_GESTURE_IS_PLACEHOLDER =
+  Object.keys(import.meta.glob('../../model/gesture/output/PLATZHALTER.md', { query: '?raw', eager: true })).length > 0;
+
 export function parseLabels(text) {
   return text
     .split(/\r?\n/)

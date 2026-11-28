@@ -1,0 +1,4 @@
+Output[0] = nothing
+Output[1] = paper
+Output[2] = rock
+Output[3] = scissors

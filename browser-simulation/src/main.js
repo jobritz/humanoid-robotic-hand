@@ -18,6 +18,7 @@ import {
   GESTURE_INPUTS,
   BUNDLED_GESTURE_MODEL,
   BUNDLED_GESTURE_LABELS,
+  BUNDLED_GESTURE_IS_PLACEHOLDER,
   parseLabels,
 } from './gestureModel.js';
 
@@ -682,7 +683,12 @@ const GESTURE_NAMES = { rock: 'Stein', paper: 'Papier', scissors: 'Schere', noth
 const gestureState = {
   /** Auswahl im Panel: mitgeliefertes Modell (falls trainiert und eingecheckt) und geöffnete Dateien. */
   sources: BUNDLED_GESTURE_MODEL
-    ? [{ label: 'model/gesture/output/gesture.tflite', source: BUNDLED_GESTURE_MODEL, name: 'gesture.tflite', labels: BUNDLED_GESTURE_LABELS }]
+    ? [{
+        label: `model/gesture/output/gesture.tflite${BUNDLED_GESTURE_IS_PLACEHOLDER ? ' – Platzhalter (künstliche Daten)' : ''}`,
+        source: BUNDLED_GESTURE_MODEL,
+        name: BUNDLED_GESTURE_IS_PLACEHOLDER ? 'gesture.tflite (Platzhalter)' : 'gesture.tflite',
+        labels: BUNDLED_GESTURE_LABELS,
+      }]
     : [],
   model: null, // geladenes GestureModel
   labels: [],

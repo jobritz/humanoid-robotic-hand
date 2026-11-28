@@ -1,0 +1,18 @@
+PLATZHALTER: trainiert mit kuenstlichen Daten (siehe PLATZHALTER.md), nicht mit echten Aufnahmen.
+
+Gesten (4): Output[0]=nothing, Output[1]=paper, Output[2]=rock, Output[3]=scissors
+Input: float32 [1, 8] in rad: index_flex, index_abd, middle_flex, middle_abd, ring_flex, ring_abd, thumb_flex, thumb_abd
+Daten: 480 Datensaetze (nothing 120, paper 120, rock 120, scissors 120), 384 Training / 96 Test
+Testgenauigkeit Keras-Modell: 96.9%
+Testgenauigkeit TFLite-Modell: 96.9%
+Modellgroesse: 6,180 Bytes
+Operatoren: FULLY_CONNECTED, MUL, SOFTMAX, SUB
+
+Verwechslungsmatrix (Zeile = tatsaechlich, Spalte = erkannt):
+          nothing    paper     rock scissors
+nothing        21        1        2        0
+paper           0       24        0        0
+rock            0        0       24        0
+scissors        0        0        0       24
+
+Checks: alle OK
