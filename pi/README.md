@@ -76,7 +76,7 @@ pyenv versions
 In the project folder:
 
 ```bash
-cd ~/Git/mediapipe/raspberry_pi_gesture_recognizer
+cd ~/Git/humanoid-robotic-hand/pi
 ```
 
 With the pyenv Python 3.12:
@@ -114,5 +114,47 @@ python --version
 python -c "import mediapipe as mp; print(mp.__version__)"
 ```
 
-The first command should print Python 3.12 (or 3.11), the second a 0.10.x
+The first command should print Python 3.12 (or 3.11), and the second a 0.10.x
 version.
+
+## Start Live Hand Tracking
+
+The MediaPipe Hand Landmarker model is included locally at
+[`models/hand_landmarker.task`](models/hand_landmarker.task). It is not
+downloaded at startup, so hand tracking works offline once the Python
+dependencies have been installed.
+
+1. Connect a camera to the Raspberry Pi and make sure OpenCV can access it.
+2. Activate the virtual environment and start the application:
+
+   ```bash
+   python run_hand_tracking.py
+   ```
+
+   To select a different camera when multiple cameras are connected, specify
+   its OpenCV index, for example `python run_hand_tracking.py --camera 1`.
+3. The window displays the camera feed, detected hand skeleton, and estimated
+   joint angles in degrees. Press **q** to quit.
+
+`hand_tracker.py` can also be used independently of the viewer. Other Python
+scripts can import `HandTracker` and call `tracker.detect(frame)` for each
+OpenCV BGR frame. The method returns `None` when no hand is detected;
+otherwise, it returns a dictionary containing `landmarks`,
+`world_landmarks`, `handedness`, `confidence`, and `joint_angles`. Angles are
+estimated in degrees as flexion relative to a straight position. The thumb
+reports MCP/IP angles, and the other fingers report MCP/PIP/DIP angles.
+
+```python
+import cv2
+from hand_tracker import HandTracker
+
+camera = cv2.VideoCapture(0)
+try:
+    with HandTracker() as tracker:
+        ok, frame = camera.read()
+        if not ok:
+            raise RuntimeError("Could not read a camera frame")
+        hand_data = tracker.detect(frame)  # Pass this output to another model
+finally:
+    camera.release()
+```
