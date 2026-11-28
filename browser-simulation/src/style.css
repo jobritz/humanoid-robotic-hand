@@ -173,6 +173,38 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.95em; }
 .gesture-detected { margin: 4px 0 8px; font-size: 16px; font-weight: 600; }
 label.check { color: var(--text); }
 
+/* Trainingsdaten: Auswahl der Geste als Kacheln, die gewählte hervorgehoben. */
+.gesture-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+.gesture-pick label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 6px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #2a2e37;
+  color: var(--text);
+  cursor: pointer;
+}
+.gesture-pick label:has(input:checked) { border-color: var(--accent); background: rgb(77 141 255 / 0.18); }
+.gesture-pick label:has(input:disabled) { cursor: default; opacity: 0.6; }
+.gesture-pick input { margin: 0; accent-color: var(--accent); }
+.gesture-pick span { flex: 1; }
+kbd {
+  font: 11px ui-monospace, Consolas, monospace;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+}
+/* Kurzes Aufleuchten der Kameravorschau, wenn ein Datensatz gespeichert wurde. */
+#camera-preview.saved { animation: saved-flash 0.3s ease-out; }
+@keyframes saved-flash {
+  from { box-shadow: 0 0 0 4px #fff, 0 4px 16px rgb(0 0 0 / 0.45); }
+}
+
 @media (max-width: 800px) {
   body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
   #panel { height: auto; order: 2; border-right: 0; }

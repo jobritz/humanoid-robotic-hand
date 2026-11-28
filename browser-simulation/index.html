@@ -88,14 +88,15 @@
 
       <section>
         <h2>Trainingsdaten aufnehmen</h2>
+        <p class="hint">Für das Gesten-Modell: Geste wählen, mit der echten Hand vor der Kamera zeigen und speichern.
+          Gespeichert werden die daraus berechneten Aktuator-Stellungen, also genau die Eingabe des Modells.</p>
+        <div id="rec-gestures" class="gesture-pick" role="radiogroup" aria-label="Geste"></div>
         <div class="row">
-          <button id="rec-random">Zufallspose</button>
           <button id="rec-save" class="primary">Speichern (Leertaste)</button>
         </div>
-        <label>Label (optional, z. B. Gestenname)
-          <input id="rec-label" type="text" placeholder="z. B. faust" autocomplete="off" />
-        </label>
-        <label class="check"><input id="rec-auto" type="checkbox" checked /> Nach dem Speichern neue Zufallspose</label>
+        <div class="row">
+          <button id="rec-series">Serie</button>
+        </div>
         <div class="row">
           <button id="rec-undo">Letztes löschen</button>
           <button id="rec-clear">Alles verwerfen</button>
@@ -103,6 +104,7 @@
         <div class="row">
           <button id="rec-download">CSV herunterladen</button>
         </div>
+        <p id="rec-counts" class="info"></p>
         <p id="rec-info" class="info"></p>
       </section>
 

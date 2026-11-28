@@ -37,8 +37,18 @@ pip install -r requirements.txt
 
 ## Trainingsdaten
 
-CSV-Dateien aus der Browser-Simulation („Trainingsdaten aufnehmen“). Benötigt werden die Spalte `label` und die
-8 Aktuator-Spalten. Weitere Spalten (Zeitstempel, Landmarken …) werden ignoriert, Zeilen ohne Label übersprungen.
+CSV-Dateien aus der Browser-Simulation, Abschnitt „Trainingsdaten aufnehmen“ (Anleitung und Tipps:
+[browser-simulation/README.md](../../browser-simulation/README.md#trainingsdaten-aufnehmen)): Geste wählen, mit der
+echten Hand vor der Kamera zeigen, einzeln oder als Serie speichern, CSV herunterladen. In den Aktuator-Spalten stehen
+die aus der Kamera berechneten Stellungen (`handMapping.js`), also dieselben Werte, die das Modell im Betrieb bekommt.
+
+**Ablage:** Alle Aufnahmen kommen nach [`data/`](data/) und werden mitcommittet, damit jeder im Team mit allen Daten
+trainiert. Den Dateinamen aus dem Download (`gesten_<Datum>_<Uhrzeit>.csv`) beibehalten, er ist eindeutig. Bisher liegt
+dort eine Aufnahme mit 800 Datensätzen (je 200 pro Geste, eine Person, linke und rechte Hand).
+
+Benötigt werden die Spalte `label` und die 8 Aktuator-Spalten. Weitere Spalten (Zeitstempel, Landmarken …) werden
+ignoriert, Zeilen ohne Label übersprungen. Nicht geeignet ist `Testdaten Roboterhand.csv`: Dort stehen in den
+Aktuator-Spalten die vorgegebenen Zielposen aus der Kalibrierung, und fast alle Zeilen haben kein Label.
 
 ```csv
 label,index_flex,index_abd,middle_flex,middle_abd,ring_flex,ring_abd,thumb_flex,thumb_abd
@@ -51,9 +61,19 @@ Klasse „keine Geste“ (`nothing`) Stellungen aufnehmen, die keiner der Gesten
 
 ## Trainieren
 
+Mit allen Aufnahmen aus `data/`:
+
 ```sh
-python train_gesture_model.py --data aufnahme1.csv aufnahme2.csv
+python train_gesture_model.py --data (Get-ChildItem data\*.csv)     # Windows PowerShell
+python train_gesture_model.py --data data/*.csv                     # Linux/macOS, Git Bash
 ```
+
+Einzelne Dateien gehen auch: `--data data/gesten_2026-11-28_17-08-06.csv data/gesten_….csv`. Unter Windows nicht
+`data/*.csv` schreiben: PowerShell und cmd lösen das `*` bei Python-Aufrufen nicht auf, das Skript sucht dann eine
+Datei mit diesem Namen.
+
+Das Ergebnis landet in `output/` und **ersetzt das dort liegende Modell**. Zum Ausprobieren deshalb einen anderen
+Ordner angeben, z. B. `--out test_output` (nicht mitcommitten), und erst ein gutes Modell nach `output/` schreiben und committen.
 
 > **Aktueller Stand:** `output/` enthält ein **Platzhalter-Modell**, trainiert mit künstlichen Daten (siehe
 > `output/PLATZHALTER.md`). Nach dem Training mit echten Aufnahmen `output/PLATZHALTER.md` löschen.

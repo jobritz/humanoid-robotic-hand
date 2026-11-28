@@ -6,7 +6,8 @@ Die Physik läuft direkt im Browser über die offiziellen MuJoCo-WASM-Bindings v
 Über die Webcam wird die eigene Hand live erkannt
 ([MediaPipe Hand Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker)), in die
 Stellungen der Aktuatoren umgerechnet und vom Gesten-Modell ausgewertet (siehe
-[Kamera & Hand-Tracking](#kamera--hand-tracking) und [Gesten-Modell](#gesten-modell-aktuatoren)).
+[Kamera & Hand-Tracking](#kamera--hand-tracking) und [Gesten-Modell](#gesten-modell-aktuatoren)). Trainingsdaten für das
+Gesten-Modell lassen sich direkt hier aufnehmen (siehe [Trainingsdaten aufnehmen](#trainingsdaten-aufnehmen)).
 Node.js wird als Entwicklungs-/Build-Umgebung genutzt (Vite).
 
 ## Starten
@@ -17,7 +18,7 @@ Voraussetzung: Node.js ≥ 20
 cd browser-simulation
 npm install
 npm run dev        # Dev-Server auf http://localhost:5173
-npm test           # prüft, dass handMapping.js wie model/gesture/hand_mapping.py rechnet
+npm test           # prüft handMapping.js (rechnet wie hand_mapping.py) und das Format der Trainingsdaten
 ```
 
 Unter Windows blockiert PowerShell `npm` eventuell („npm.ps1 ist nicht digital signiert“). Dann `npm.cmd install` bzw.
@@ -57,6 +58,7 @@ Mitgelieferte Modelle:
 | Simulierte Hand folgt der echten Hand | Die erkannte Hand steuert die simulierte Hand (Physik-Modus) |
 | Gesten-Modell | Modell starten, erkannte Geste der echten Hand (Kamera) ansehen |
 | Schere, Stein, Papier gewinnen | Die simulierte Hand zeigt die Gegenpose zur erkannten Geste |
+| Trainingsdaten aufnehmen | Geste wählen (Tasten 1–4), Leertaste speichert einen Datensatz, „Serie“ 50 am Stück, CSV herunterladen |
 | Geom-Gruppen | Ein-/Ausblenden von Geom-Gruppen (Standard: 0–2 sichtbar, Kollisions-Geoms oft in Gruppe 3) |
 | Maus | Linke Taste drehen, rechte Taste verschieben, Mausrad zoomen |
 
@@ -155,6 +157,61 @@ sie beim Build nach `dist/litert/` (siehe `vite.config.js`). Keras speichert die
 ablehnt; [`src/tfliteInfo.js`](src/tfliteInfo.js) setzt sie vor dem Laden in einer Kopie auf die feste Form. In der
 Browser-Konsole erscheinen beim Laden einige `INFO`- und `WARNING`-Meldungen von LiteRT.js; sie sind normal.
 
+## Trainingsdaten aufnehmen
+
+Nimmt Trainingsdaten für das [Gesten-Modell](../model/gesture/README.md) auf. Gespeichert wird genau das, was das Modell
+im Betrieb bekommt: die aus dem Kamerabild berechneten 8 Aktuator-Stellungen. Dazu kommen die gezeigte Geste und die
+Landmarken von MediaPipe.
+
+1. Kamera aktivieren (Abschnitt „Kamera & Hand-Tracking“).
+2. Geste wählen: Stein, Schere, Papier oder Keine Geste. Die Tasten 1–4 gehen auch, wie bei `model/capture_images.py`.
+3. Die Geste mit der echten Hand vor der Kamera zeigen und speichern:
+   - **Leertaste** oder „Als … speichern“: ein Datensatz aus dem aktuellen Kamerabild.
+   - **Serie**: nach 3 Sekunden Countdown 50 Datensätze, 5 pro Sekunde. Gezählt werden nur Bilder mit erkannter Hand.
+     Dabei die Hand etwas bewegen, drehen und den Abstand ändern. Während der Serie lässt sich die Geste nicht wechseln.
+
+   Bei jedem gespeicherten Datensatz leuchtet die Kameravorschau kurz auf. Ist „Simulierte Hand folgt der echten Hand“
+   an, zeigt die simulierte Hand die Stellung, die gespeichert wird.
+4. Für die anderen Gesten wiederholen. Darunter steht die Anzahl je Geste.
+5. **CSV herunterladen** speichert alle Datensätze als `gesten_<Datum>_<Uhrzeit>.csv`. Solange etwas nicht
+   heruntergeladen ist, warnt der Browser vor dem Schließen oder Neuladen der Seite. „Letztes löschen“ entfernt den
+   zuletzt gespeicherten Datensatz, „Alles verwerfen“ nach einer Rückfrage alle.
+6. Die CSV-Datei nach `model/gesture/data/` legen und mitcommitten, damit das ganze Team mit allen Aufnahmen trainiert.
+7. Mit allen Aufnahmen trainieren, wie in [model/gesture/README.md](../model/gesture/README.md#trainieren)
+   beschrieben. Das Ergebnis lässt sich oben im Gesten-Modell über
+   „Datei öffnen…“ direkt ausprobieren.
+
+**Tipps für brauchbare Daten**
+
+- Pro Geste einige Hundert Datensätze aus mehreren Serien: verschiedene Personen, linke und rechte Hand,
+  verschiedene Abstände, Winkel, Orte und Lichtverhältnisse.
+- „Keine Geste“ braucht möglichst viele **verschiedene** Handformen, die keine der drei Gesten sind (z. B. Zeigefinger
+  oder Daumen hoch, halb geöffnete Hand). Das Modell kennt nur, was in den Daten vorkommt: Im Test wurde „Daumen hoch“
+  als Papier erkannt, weil „Keine Geste“ nur mit „Zeigefinger hoch“ aufgenommen war.
+- Datensätze einer Serie ähneln sich stark, und das Trainingsskript teilt sie zufällig in Training und Test auf. Die
+  Testgenauigkeit im Trainingsbericht ist deshalb zu optimistisch. Ehrlicher ist eine eigene, später aufgenommene
+  Datei: `python predict_gesture.py --csv neue_aufnahme.csv`.
+
+**Aufbau der CSV-Datei** (gleiche Spalten wie `Testdaten Roboterhand.csv`):
+
+| Spalten | Inhalt |
+| --- | --- |
+| `timestamp` | Aufnahmezeitpunkt (ISO 8601, UTC) |
+| `label` | Geste wie in `labels.txt` des Modells: `rock`, `scissors`, `paper`, `nothing` |
+| `handedness`, `score` | `Left`/`Right` und Sicherheit dieser Zuordnung |
+| `x0` … `z20` | 21 Landmarken im Kamerabild (x, y von 0 bis 1 im ungespiegelten Bild) |
+| `wx0` … `wz20` | 21 Landmarken in Metern (Weltkoordinaten), daraus werden die Aktuator-Stellungen berechnet |
+| `index_flex` … `thumb_abd` | 8 Aktuator-Stellungen in rad, berechnet mit `handMapping.js`: die Eingabe des Modells |
+
+Das Trainingsskript liest nur `label` und die 8 Aktuator-Spalten. Die Landmarken bleiben erhalten, damit sich die Werte
+neu berechnen lassen, falls sich die Umrechnung ändert. In `Testdaten Roboterhand.csv` stehen in den Aktuator-Spalten
+dagegen die vorgegebenen Zielposen, mit denen die Umrechnung kalibriert wurde, und fast keine Labels. Für das Training
+des Gesten-Modells eignet sich diese Datei deshalb nicht.
+
+Getestet mit den MediaPipe-Testbildern als Webcam: Je eine Serie Stein (Faust), Schere (Victory), Papier (flache Hand)
+und Keine Geste (Zeigefinger hoch) aufgenommen und heruntergeladen, damit `train_gesture_model.py` ausgeführt (alle
+Prüfungen OK). Das trainierte Modell erkennt die vier Gesten danach in der Simulation.
+
 ## Schnittstelle für die Ansteuerung
 
 Im Browser gibt es das Objekt `window.sim`:
@@ -177,6 +234,11 @@ await window.sim.gestureModel.load(url, labelsText) // Modell (URL, File, Uint8A
 await window.sim.gestureModel.run([1.57, 0, 1.57, 0, 1.57, 0, 1.57, 0]) // eigene Werte → { values, label, score }
 await window.sim.gestureModel.run()        // zuletzt von der Kamera erkannte Hand auswerten
 
+// Trainingsdaten (Abschnitt „Trainingsdaten aufnehmen“)
+window.sim.recording.count                 // Anzahl aufgenommener Datensätze
+window.sim.recording.counts                // Anzahl je Geste, z. B. { rock: 50, paper: 12 }
+window.sim.recording.toCsv()               // Inhalt der CSV-Datei, wie „CSV herunterladen“ sie speichert
+
 // Beispiel: Abstand zwischen Daumen- und Zeigefingerspitze in cm
 const p = window.sim.hand.worldLandmarks;
 Math.hypot(p[4].x - p[8].x, p[4].y - p[8].y, p[4].z - p[8].z) * 100;
@@ -191,15 +253,16 @@ browser-simulation/
 ├─ public/
 │  ├─ models/          Mitgelieferte MuJoCo-Modelle (ein Ordner pro Modell)
 │  └─ mediapipe/       Hand-Landmarker-Modell (hand_landmarker.task)
-├─ test/               npm test: handMapping.js rechnet wie model/gesture/hand_mapping.py
+├─ test/               npm test: handMapping.js rechnet wie hand_mapping.py, Trainingsdaten passen zum Trainingsskript
 └─ src/
-   ├─ main.js          UI, Simulationsschleife, Kamera, Gesten-Modell, window.sim
+   ├─ main.js          UI, Simulationsschleife, Kamera, Gesten-Modell, Aufnahme, window.sim
    ├─ mujoco.js        Laden der WASM-Engine, Kompilieren über das virtuelle Dateisystem
    ├─ renderer.js      three.js-Darstellung der Geoms (Primitive + Meshes)
    ├─ camera.js        Webcam mit einstellbarer Auflösung, Farbcodierung und JPEG-Qualität
    ├─ handTracking.js  MediaPipe Hand Landmarker, Landmarken-Overlay der Vorschau
    ├─ handMapping.js   MediaPipe-Landmarken → 8 Aktuator-Stellungen (wie model/gesture/hand_mapping.py)
    ├─ gestureModel.js  Gesten-Modell mit den 8 Aktuator-Stellungen als Eingabe (LiteRT.js)
+   ├─ recording.js     Trainingsdaten für das Gesten-Modell sammeln und als CSV ausgeben
    ├─ tfliteInfo.js    Liest Ein-/Ausgaben, Quantisierung und Operatoren aus .tflite-Dateien
    └─ style.css
 ```

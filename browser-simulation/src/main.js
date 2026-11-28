@@ -20,6 +20,7 @@ import {
   parseLabels,
 } from './gestureModel.js';
 import { landmarksToActuators, Smoother } from './handMapping.js';
+import { TrainingData } from './recording.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -62,6 +63,14 @@ const ui = {
   gestureOutputs: $('gesture-outputs'),
   gestureStatus: $('gesture-status'),
   gestureWin: $('gesture-win'),
+  recGestures: $('rec-gestures'),
+  recSave: $('rec-save'),
+  recSeries: $('rec-series'),
+  recUndo: $('rec-undo'),
+  recClear: $('rec-clear'),
+  recDownload: $('rec-download'),
+  recCounts: $('rec-counts'),
+  recInfo: $('rec-info'),
 };
 
 const JOINT = { FREE: 0, BALL: 1, SLIDE: 2, HINGE: 3 };
@@ -368,6 +377,7 @@ function trackHand(frame) {
       ? `${HANDEDNESS[hand.handedness] ?? hand.handedness} Hand erkannt (${Math.round(hand.score * 100)} %) · ${rate}`
       : `Keine Hand im Bild · ${rate}`,
   );
+  recordSeriesFrame();
 }
 
 async function toggleCamera() {
@@ -413,6 +423,7 @@ function setCameraActive(active) {
     showHandActuators();
     drawHand(ui.cameraOverlay, null);
     updateFrameInfo();
+    if (rec.series) stopSeries('Serie abgebrochen – die Kamera ist aus.', true);
   }
 }
 
@@ -659,6 +670,166 @@ function fillGestureModelSelect(selected = 0) {
 fillGestureModelSelect();
 
 // ---------------------------------------------------------------------------
+// Trainingsdaten für das Gesten-Modell aufnehmen (siehe recording.js)
+// ---------------------------------------------------------------------------
+
+/** Gesten zur Auswahl; Tasten 1–4 wie bei model/capture_images.py (1 Stein, 2 Schere, 3 Papier, 4 nichts). */
+const REC_GESTURES = ['rock', 'scissors', 'paper', 'nothing'];
+/** Serie: so viele Datensätze, höchstens einer je Intervall (nur mit erkannter Hand), nach einem Countdown. */
+const SERIES = { count: 50, intervalMs: 200, countdownMs: 3000 };
+
+const trainingData = new TrainingData(GESTURE_INPUTS);
+const rec = {
+  label: null, // gewählte Geste (Label in der CSV, wie labels.txt des Modells)
+  series: null, // laufende Serie { startAt, saved, lastAt } oder null
+};
+
+function buildRecGestures() {
+  ui.recGestures.replaceChildren(
+    ...REC_GESTURES.map((label, i) => {
+      const option = document.createElement('label');
+      option.innerHTML = '<input type="radio" name="rec-gesture" /><span></span><kbd></kbd>';
+      const input = option.querySelector('input');
+      input.value = label;
+      input.addEventListener('change', () => selectRecGesture(label));
+      option.querySelector('span').textContent = GESTURE_NAMES[label];
+      option.querySelector('kbd').textContent = i + 1;
+      return option;
+    }),
+  );
+}
+
+function selectRecGesture(label) {
+  if (rec.series) return; // während einer Serie bleibt die Geste fest
+  rec.label = label;
+  ui.recGestures.querySelector(`input[value="${label}"]`).checked = true;
+  setRecInfo(`Geste: ${GESTURE_NAMES[label]} – jetzt mit der Hand zeigen und speichern.`);
+  updateRecUi();
+}
+
+/** Speichert die gerade erkannte Hand mit der gewählten Geste; meldet, warum nicht, und gibt dann false zurück. */
+function saveRecSample() {
+  const problem = !rec.label
+    ? 'Erst eine Geste wählen (Tasten 1–4).'
+    : !camera.running
+      ? 'Kamera aktivieren – gespeichert wird die Hand vor der Kamera.'
+      : !state.hand
+        ? 'Keine Hand erkannt – nichts gespeichert.'
+        : null;
+  if (problem) {
+    setRecInfo(problem, true);
+    return false;
+  }
+  trainingData.add(rec.label, state.hand, state.handActuators);
+  // Aufleuchten der Kameravorschau als Bestätigung (Animation neu starten)
+  ui.cameraPreview.classList.remove('saved');
+  void ui.cameraPreview.offsetWidth;
+  ui.cameraPreview.classList.add('saved');
+  const hand = HANDEDNESS[state.hand.handedness] ?? state.hand.handedness;
+  setRecInfo(`Gespeichert: ${GESTURE_NAMES[rec.label]} (${hand} Hand)`);
+  updateRecUi();
+  return true;
+}
+
+function toggleSeries() {
+  if (rec.series) return stopSeries('Serie abgebrochen.');
+  if (!rec.label) return setRecInfo('Erst eine Geste wählen (Tasten 1–4).', true);
+  if (!camera.running) return setRecInfo('Kamera aktivieren – gespeichert wird die Hand vor der Kamera.', true);
+  rec.series = { startAt: performance.now() + SERIES.countdownMs, saved: 0, lastAt: -Infinity };
+  updateRecUi();
+}
+
+function stopSeries(message, isError = false) {
+  rec.series = null;
+  setRecInfo(message, isError);
+  updateRecUi();
+}
+
+/** Je Kamerabild aufgerufen: nimmt während einer Serie höchstens alle SERIES.intervalMs einen Datensatz auf. */
+function recordSeriesFrame() {
+  const series = rec.series;
+  if (!series) return;
+  const now = performance.now();
+  if (now >= series.startAt && now - series.lastAt >= SERIES.intervalMs && state.hand) {
+    series.lastAt = now;
+    if (saveRecSample()) series.saved++;
+    if (series.saved >= SERIES.count) {
+      return stopSeries(`Serie fertig: ${SERIES.count} Datensätze ${GESTURE_NAMES[rec.label]}.`);
+    }
+  }
+  updateRecUi();
+}
+
+function setRecInfo(text, isError = false) {
+  ui.recInfo.textContent = text;
+  ui.recInfo.classList.toggle('error', isError);
+}
+
+function updateRecUi() {
+  const { series } = rec;
+  const name = rec.label && GESTURE_NAMES[rec.label];
+  const empty = trainingData.length === 0;
+  ui.recSave.textContent = name ? `Als ${name} speichern (Leertaste)` : 'Speichern (Leertaste)';
+  ui.recSave.disabled = !rec.label || !!series;
+  ui.recSeries.textContent = series ? 'Serie abbrechen' : `Serie: ${SERIES.count} Datensätze, ${1000 / SERIES.intervalMs} pro Sekunde`;
+  ui.recSeries.disabled = !rec.label && !series;
+  ui.recUndo.disabled = empty || !!series;
+  ui.recClear.disabled = empty || !!series;
+  ui.recDownload.disabled = empty;
+  ui.recGestures.querySelectorAll('input').forEach((input) => { input.disabled = !!series; });
+
+  const counts = trainingData.counts();
+  const perGesture = REC_GESTURES.map((label) => `${GESTURE_NAMES[label]} ${counts.get(label) ?? 0}`).join(' · ');
+  const pending = trainingData.changed && !empty ? ' – noch nicht heruntergeladen' : '';
+  ui.recCounts.textContent = `${perGesture} (gesamt ${trainingData.length})${pending}`;
+
+  if (series) {
+    const wait = series.startAt - performance.now();
+    setRecInfo(
+      wait > 0
+        ? `Serie startet in ${Math.ceil(wait / 1000)} s – ${name} zeigen und die Hand dabei etwas bewegen.`
+        : `Serie läuft: ${series.saved}/${SERIES.count} ${name}${state.hand ? '' : ' · keine Hand im Bild, warte…'}`,
+    );
+  }
+}
+
+function undoRecSample() {
+  const sample = trainingData.undo();
+  if (sample) setRecInfo(`Gelöscht: letzter Datensatz (${GESTURE_NAMES[sample.label] ?? sample.label}).`);
+  updateRecUi();
+}
+
+function clearRecSamples() {
+  if (!trainingData.length) return;
+  if (!confirm(`Alle ${trainingData.length} aufgenommenen Datensätze verwerfen?`)) return;
+  trainingData.clear();
+  setRecInfo('Alle Datensätze verworfen.');
+  updateRecUi();
+}
+
+function downloadRecCsv() {
+  const pad = (n) => String(n).padStart(2, '0');
+  const d = new Date();
+  const name = `gesten_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.csv`;
+  const url = URL.createObjectURL(new Blob([trainingData.toCsv()], { type: 'text/csv' }));
+  const link = Object.assign(document.createElement('a'), { href: url, download: name });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  trainingData.markDownloaded();
+  setRecInfo(`${trainingData.length} Datensätze als ${name} heruntergeladen – trainieren mit model/gesture/train_gesture_model.py.`);
+  updateRecUi();
+}
+
+/** Tastatur nicht abfangen, solange in ein Textfeld oder eine Auswahl getippt wird. */
+function isTyping(target) {
+  if (target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return true;
+  return target instanceof HTMLInputElement && !['checkbox', 'radio', 'range', 'button'].includes(target.type);
+}
+
+buildRecGestures();
+updateRecUi();
+
+// ---------------------------------------------------------------------------
 // Ereignisse
 // ---------------------------------------------------------------------------
 
@@ -687,6 +858,30 @@ ui.gestureWin.addEventListener('click', async () => {
   } catch (err) {
     showGestureError(err);
   }
+});
+
+ui.recSave.addEventListener('click', saveRecSample);
+ui.recSeries.addEventListener('click', toggleSeries);
+ui.recUndo.addEventListener('click', undoRecSample);
+ui.recClear.addEventListener('click', clearRecSamples);
+ui.recDownload.addEventListener('click', downloadRecCsv);
+// Leertaste speichert, 1–4 wählen die Geste. Die Leertaste würde sonst die Seite scrollen bzw. den gerade fokussierten
+// Knopf oder Schalter auslösen, deshalb wird sie auch beim Loslassen abgefangen.
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.altKey || e.metaKey || isTyping(e.target)) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!e.repeat && !rec.series) saveRecSample();
+  } else if (REC_GESTURES[Number(e.key) - 1]) {
+    selectRecGesture(REC_GESTURES[Number(e.key) - 1]);
+  }
+});
+document.addEventListener('keyup', (e) => {
+  if (e.code === 'Space' && !isTyping(e.target)) e.preventDefault();
+});
+// Warnt vor dem Schließen oder Neuladen, solange Aufnahmen nicht heruntergeladen sind.
+window.addEventListener('beforeunload', (e) => {
+  if (trainingData.changed && trainingData.length) e.preventDefault();
 });
 
 ui.gestureToggle.addEventListener('click', () => toggleGestureModel().catch(showGestureError));
@@ -811,6 +1006,15 @@ window.sim = {
       const best = scores.reduce((b, v, i) => (v > scores[b] ? i : b), 0);
       return { values: scores, label: gestureState.labels[best] ?? `Output[${best}]`, score: scores[best] };
     },
+  },
+  /** Aufgenommene Trainingsdaten für das Gesten-Modell (siehe recording.js). */
+  recording: {
+    /** Anzahl Datensätze. */
+    get count() { return trainingData.length; },
+    /** Anzahl je Geste, z. B. { rock: 50, paper: 12 }. */
+    get counts() { return Object.fromEntries(trainingData.counts()); },
+    /** Inhalt der CSV-Datei, wie „CSV herunterladen“ sie speichert. */
+    toCsv() { return trainingData.toCsv(); },
   },
 };
 
