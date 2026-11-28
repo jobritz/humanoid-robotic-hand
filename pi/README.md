@@ -1,55 +1,62 @@
-# Gesture Recognizer on the Raspberry Pi: Environment Setup
+# Raspberry Pi Hand Tracking
 
-This guide explains how to set up the Python virtual environment for the
-gesture recognizer on a Raspberry Pi.
+Python utilities for running MediaPipe Hand Landmarker on a Raspberry Pi
+camera. The package uses a local model and provides both an interactive camera
+view and reusable landmark data for a later processing stage.
 
-## Why not just `pip install mediapipe`?
+## Contents
 
-Two things make the setup on the Pi special:
+| File | Purpose |
+| --- | --- |
+| `hand_tracker.py` | Loads the MediaPipe model, processes camera frames, and creates the combined camera/landmark view. |
+| `run_hand_tracking.py` | Starts the camera and optional on-screen interface. |
+| `requirements.txt` | Pins a MediaPipe range compatible with the supported Raspberry Pi Python versions and NumPy. |
+| `models/hand_landmarker.task` | Local MediaPipe Hand Landmarker model used without a network connection at runtime. |
 
-1. **Python version:** Raspberry Pi OS Trixie ships with Python 3.13. The
-   MediaPipe 0.10.x versions that run on the Pi only provide wheels for
-   Python up to 3.12.
-2. **MediaPipe version:** Newer versions (e.g. 1.2.3) crash on the Pi with
-   `Illegal instruction`, because the wheel uses CPU instructions (AES) that
-   the Pi's processor does not support. Older 0.10.x versions are used
-   instead.
+## Features
+
+- Detects one hand and draws the 21-point MediaPipe skeleton.
+- Keeps the original browser-compatible normalized image landmarks.
+- Provides MediaPipe world landmarks in meters.
+- Provides wrist-relative world landmarks by subtracting landmark 0.
+- Shows camera and landmark information in one combined OpenCV window.
+- Supports a headless mode for later model integration.
+- Does not download the Hand Landmarker model at startup.
 
 ## Prerequisites
 
-- Raspberry Pi with Raspberry Pi OS (64-bit)
-- Internet connection
+- 64-bit Raspberry Pi OS
+- Raspberry Pi camera or USB camera
+- Python 3.11 or 3.12
+- Internet access only during initial setup
 
-## 1. Provide a suitable Python version
+Raspberry Pi OS Trixie may ship Python 3.13, while MediaPipe 0.10.x only
+provides compatible wheels through Python 3.12.
 
-First check which version you have:
+## Setup
+
+Run the following commands inside the repository:
 
 ```bash
+cd ~/Git/humanoid-robotic-hand/pi
 python3 --version
+python3 -m venv .venv312
+source .venv312/bin/activate
 ```
 
-- **Python 3.11 or 3.12:** Skip ahead to step 2.
-- **Python 3.13 (Trixie):** Additionally install Python 3.12 with `pyenv`.
-  The system Python stays untouched.
-
-### Install Python 3.12 with pyenv
-
-Install the build dependencies:
+If Python 3.13 is the system version, install Python 3.12 with `pyenv` first.
+The Raspberry Pi build dependencies and pyenv setup are:
 
 ```bash
 sudo apt update
 sudo apt install -y build-essential curl git libssl-dev zlib1g-dev \
   libbz2-dev libreadline-dev libsqlite3-dev libncursesw5-dev xz-utils \
   tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
-```
 
-Install pyenv:
-
-```bash
 curl https://pyenv.run | bash
 ```
 
-Then append these lines to the end of `~/.bashrc`:
+Add the following lines to `~/.bashrc`:
 
 ```bash
 export PYENV_ROOT="$HOME/.pyenv"
@@ -57,143 +64,131 @@ export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
 ```
 
-Reload the shell and build Python 3.12. Depending on the Pi model, this takes
-roughly 10 to 40 minutes:
+Then reload the shell, install Python 3.12, and create the environment:
 
 ```bash
 source ~/.bashrc
 pyenv install 3.12
-```
-
-Verify:
-
-```bash
-pyenv versions
-```
-
-## 2. Create the virtual environment
-
-In the project folder:
-
-```bash
-cd ~/Git/humanoid-robotic-hand/pi
-```
-
-With the pyenv Python 3.12:
-
-```bash
 ~/.pyenv/versions/3.12.*/bin/python -m venv .venv312
-```
-
-If your system Python is already 3.11 or 3.12, this is enough instead:
-
-```bash
-python3 -m venv .venv312
-```
-
-Activate the environment (required in every new terminal):
-
-```bash
 source .venv312/bin/activate
 ```
 
-The prompt now starts with `(.venv312)`. Use `deactivate` to leave the
-environment.
-
-## 3. Install the dependencies
+Install and verify the Python dependencies:
 
 ```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
-Verify the installation:
-
-```bash
 python --version
 python -c "import mediapipe as mp; print(mp.__version__)"
 ```
 
-The first command should print Python 3.12 (or 3.11), and the second a 0.10.x
-version.
+The MediaPipe version should be a 0.10.x release.
 
-## Start Live Hand Tracking
+## Run the Interface
 
-The MediaPipe Hand Landmarker model is included locally at
-[`models/hand_landmarker.task`](models/hand_landmarker.task). It is not
-downloaded at startup, so hand tracking works offline once the Python
-dependencies have been installed.
+With the virtual environment activated:
 
-1. Connect a camera to the Raspberry Pi and make sure OpenCV can access it.
-2. Activate the virtual environment and start the application:
+```bash
+python run_hand_tracking.py
+```
 
-   ```bash
-   python run_hand_tracking.py
-   ```
+Use another OpenCV camera index when more than one camera is available:
 
-   To select a different camera when multiple cameras are connected, specify
-   its OpenCV index, for example `python run_hand_tracking.py --camera 1`.
-3. One combined window displays the camera feed, hand skeleton, and all 21
-   landmarks. The button labeled **Show world** or **Show relative** switches
-   between wrist-relative and absolute world coordinates. Clicking the button
-   or pressing **w** toggles the mode. Press **q** or **Esc** to quit.
+```bash
+python run_hand_tracking.py --camera 1
+```
 
-To run tracking without opening a preview window (for example, in a headless
-session), use:
+The combined window contains:
+
+- The camera image and hand skeleton.
+- The handedness and confidence score.
+- A table of all 21 MediaPipe landmarks.
+- A coordinate mode button.
+
+Click **Show world** or **Show relative** in the landmark panel to switch
+coordinates. **w** has the same function. **q** or **Esc** closes the window.
+
+## Headless Mode
+
+Disable the graphical interface for server or pipeline use:
 
 ```bash
 python run_hand_tracking.py --no-display
 ```
 
-In this mode, tracking continues until interrupted with **Ctrl+C**. The
-`hand_data` result is still produced for every camera frame and can be passed
-to another model in the script.
+Tracking continues in this mode until it is interrupted with **Ctrl+C**. Camera
+frames are still processed and `HandTracker.detect()` still produces landmark
+data.
 
-`hand_tracker.py` can also be used independently of the viewer. Other Python
-scripts can import `HandTracker` and call `tracker.detect(frame)` for each
-OpenCV BGR frame. The method returns `None` when no hand is detected;
-otherwise, it returns a browser-compatible dictionary containing
-`landmarks`, `worldLandmarks`, `relativeLandmarks`, `handedness`, and `score`.
-All landmark collections contain 21 `{x, y, z}` points in MediaPipe order.
-Image `landmarks` use normalized image coordinates. `worldLandmarks` contain
-the original MediaPipe world coordinates in meters.
-`relativeLandmarks` subtracts landmark 0 (the wrist) from every world point,
-so each point is expressed relative to the wrist. These values are kept
-side-by-side because the browser and future models can consume the original
-browser-compatible fields while local processing can use wrist-relative data.
+## Python API
+
+Import `HandTracker` in another Python script:
 
 ```python
 import cv2
+
 from hand_tracker import HandTracker
 
 camera = cv2.VideoCapture(0)
+
 try:
     with HandTracker() as tracker:
-        ok, frame = camera.read()
-        if not ok:
-            raise RuntimeError("Could not read a camera frame")
-        hand_data = tracker.detect(frame)  # Pass this output to another model
+        while True:
+            ok, frame = camera.read()
+            if not ok:
+                break
+
+            hand_data = tracker.detect(frame)
+
+            if hand_data is not None:
+                # Pass hand_data to another model or processing stage here.
+                pass
 finally:
     camera.release()
 ```
 
+`detect(frame)` accepts a BGR OpenCV frame and returns `None` when no hand is
+detected. Otherwise it returns:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `landmarks` | 21 points | Browser-compatible normalized image landmarks `{x, y, z}`. |
+| `worldLandmarks` | 21 points | Original MediaPipe world landmarks in meters. |
+| `relativeLandmarks` | 21 points | World landmarks with landmark 0 subtracted from every point. |
+| `handedness` | string | `Left` or `Right`. |
+| `score` | float | Handedness confidence from `0` to `1`. |
+
+MediaPipe landmark order is:
+
+- 0: wrist
+- 1-4: thumb CMC, MCP, IP, and tip
+- 5-8: index MCP, PIP, DIP, and tip
+- 9-12: middle MCP, PIP, DIP, and tip
+- 13-16: ring MCP, PIP, DIP, and tip
+- 17-20: pinky MCP, PIP, DIP, and tip
+
 ## Troubleshooting
 
-- `Error in cpuinfo: prctl(PR_SVE_GET_VL) failed` is a CPU-feature probe.
-  It can appear on Raspberry Pi processors that do not support SVE and does
-  not prevent tracking.
-- `Created TensorFlow Lite XNNPACK delegate for CPU` is an informational
-  message confirming that the CPU delegate is enabled.
-- MediaPipe's `Feedback manager requires a model with a single signature` and
-  `Using NORM_RECT without IMAGE_DIMENSIONS` messages are runtime warnings.
-  They do not prevent hand detection when the viewer is working.
-- If Qt reports that the `wayland` platform plugin is missing, the viewer now
-  selects the bundled `xcb` plugin when an XWayland display is available.
-  You can also set it explicitly when starting the program:
+### Wayland Qt warning
 
-  ```bash
-  QT_QPA_PLATFORM=xcb python run_hand_tracking.py
-  ```
+The bundled OpenCV Qt plugins may not support Wayland. The launcher sets
+`QT_QPA_PLATFORM=xcb` when both Wayland and XWayland are available. It can also
+be selected explicitly:
 
-  This requires an XWayland display. If the viewer still cannot open, use a
-  desktop session supported by the installed OpenCV Qt plugins.
+```bash
+QT_QPA_PLATFORM=xcb python run_hand_tracking.py
+```
+
+XWayland or another desktop session with a supported Qt plugin is required.
+
+### CPU feature messages
+
+`prctl(PR_SVE_GET_VL) failed` is a CPU feature probe and does not prevent
+tracking on a processor without SVE support.
+
+`Created TensorFlow Lite XNNPACK delegate for CPU` confirms that CPU inference
+is active.
+
+MediaPipe feedback-manager and `NORM_RECT` log messages are runtime warnings.
+They do not indicate an application failure when hand detection continues.
