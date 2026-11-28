@@ -10,7 +10,7 @@ if os.environ.get("WAYLAND_DISPLAY") and os.environ.get("DISPLAY"):
 
 import cv2
 
-from hand_tracker import HandTracker, draw_hand
+from hand_tracker import HandTracker, draw_hand, draw_landmark_table
 
 
 def main():
@@ -43,6 +43,7 @@ def main():
                         "MediaPipe Hand Tracking (press q to quit)",
                         draw_hand(frame, hand_data),
                     )
+                    cv2.imshow("Hand Landmarks", draw_landmark_table(hand_data))
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
     finally:

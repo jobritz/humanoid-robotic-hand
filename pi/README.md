@@ -133,8 +133,9 @@ dependencies have been installed.
 
    To select a different camera when multiple cameras are connected, specify
    its OpenCV index, for example `python run_hand_tracking.py --camera 1`.
-3. The window displays the camera feed, detected hand skeleton, and estimated
-   joint angles in degrees. Press **q** to quit.
+3. The camera window displays the detected hand skeleton. A second window
+   lists all 21 landmarks by joint, including image and world coordinates.
+   Press **q** in either window to quit.
 
 To run tracking without opening a preview window (for example, in a headless
 session), use:
@@ -150,10 +151,14 @@ to another model in the script.
 `hand_tracker.py` can also be used independently of the viewer. Other Python
 scripts can import `HandTracker` and call `tracker.detect(frame)` for each
 OpenCV BGR frame. The method returns `None` when no hand is detected;
-otherwise, it returns a dictionary containing `landmarks`,
-`world_landmarks`, `handedness`, `confidence`, and `joint_angles`. Angles are
-estimated in degrees as flexion relative to a straight position. The thumb
-reports MCP/IP angles, and the other fingers report MCP/PIP/DIP angles.
+otherwise, it returns a browser-compatible dictionary containing
+`landmarks`, `worldLandmarks`, `handedness`, and `score`. Both landmark
+collections contain 21 `{x, y, z}` points in MediaPipe order. Image `x/y`
+coordinates are normalized to `0…1`; image `z` is relative to the wrist. World
+landmarks are in meters. These scales match the corresponding feature columns
+in [`Testdaten Roboterhand.csv`](../Testdaten%20Roboterhand.csv), so the raw
+landmarks are not rescaled. The second window shows each point's index and
+anatomical joint name alongside both coordinate sets.
 
 ```python
 import cv2
