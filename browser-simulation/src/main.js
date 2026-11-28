@@ -21,6 +21,7 @@ import {
   BUNDLED_GESTURE_IS_PLACEHOLDER,
   parseLabels,
 } from './gestureModel.js';
+import { landmarksToActuators, Smoother } from './handMapping.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -41,6 +42,8 @@ const ui = {
   dropOverlay: $('drop-overlay'),
   cameraToggle: $('camera-toggle'),
   cameraInfo: $('camera-info'),
+  cameraFollow: $('camera-follow'),
+  cameraActuators: $('camera-actuators'),
   cameraFrameSize: $('camera-framesize'),
   cameraPixelFormat: $('camera-pixformat'),
   cameraQualityRow: $('camera-quality-row'),
@@ -63,6 +66,7 @@ const ui = {
   aiWin: $('ai-win'),
   aiStatus: $('ai-status'),
   gestureModelSelect: $('gesture-model-select'),
+  gestureSource: $('gesture-source'),
   gestureToggle: $('gesture-toggle'),
   gestureOpen: $('gesture-open'),
   gestureFileInput: $('gesture-file-input'),
@@ -93,6 +97,7 @@ const state = {
   simStartTime: 0,
   sliders: [], // { input, output, apply(value), read() }
   hand: null, // letztes Ergebnis des Hand-Trackings (siehe handTracking.js)
+  handActuators: null, // daraus berechnete 8 Aktuator-Stellungen in rad (siehe handMapping.js) oder null
 };
 
 // ---------------------------------------------------------------------------
@@ -360,11 +365,23 @@ const camera = new Esp32Camera(ui.cameraVideo, ui.cameraFrame, {
   },
 });
 
+/** Glättet die Ansteuerung der simulierten Hand (nicht die Eingabe des Gesten-Modells, die bleibt ungeglättet). */
+const followSmoother = new Smoother(0.5);
+
 function trackHand(frame) {
   // Erkannt wird auf dem angezeigten Kamerabild, also auf dem, was der ESP32 liefern würde.
   const hand = tracker.detect(ui.cameraFrame, frame.timestamp);
-  // Hier kann später die Abbildung der Landmarken auf die Gelenke ansetzen (z. B. window.sim.setJoints).
   state.hand = hand;
+  // Landmarken → 8 Aktuator-Stellungen, gleiche Rechnung wie auf dem Raspberry Pi (hand_mapping.py).
+  state.handActuators = hand ? landmarksToActuators(hand.worldLandmarks) : null;
+  showHandActuators();
+  // Steuert das Bildmodell die Hand (Gewinnmodus oder „Ausgaben steuern die Hand“), hat es Vorrang.
+  const aiDrivesHand = ai.winEnabled || (ai.enabled && ui.aiDriveHand.checked);
+  if (!hand) followSmoother.reset();
+  else if (ui.cameraFollow.checked && state.model && !aiDrivesHand) {
+    const values = followSmoother.next(state.handActuators);
+    setControls(Object.fromEntries(GESTURE_INPUTS.map((name, i) => [name, values[i]])));
+  }
   drawHand(ui.cameraOverlay, hand);
   const rate = `${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
   setCameraInfo(
@@ -398,11 +415,23 @@ async function toggleCamera() {
   }
 }
 
+/** Zeigt Beugung und Spreizung der erkannten Hand in Grad (Zeige-, Mittel-, Ringfinger, Daumen). */
+function showHandActuators() {
+  const v = state.handActuators;
+  const deg = (r) => Math.round((r * 180) / Math.PI);
+  ui.cameraActuators.textContent = v
+    ? `Beugung ${[0, 2, 4, 6].map((i) => `${deg(v[i])}°`).join(' / ')} · Spreizung ${[1, 3, 5, 7].map((i) => `${deg(v[i])}°`).join(' / ')}` +
+      ' (Zeige / Mittel / Ring / Daumen)'
+    : '';
+}
+
 function setCameraActive(active) {
   ui.cameraToggle.textContent = active ? 'Kamera beenden' : 'Kamera aktivieren';
   ui.cameraPreview.hidden = !active;
   if (!active) {
     state.hand = null;
+    state.handActuators = null;
+    showHandActuators();
     drawHand(ui.cameraOverlay, null);
     updateFrameInfo();
     showAiWaiting();
@@ -781,11 +810,23 @@ function runGestureModel() {
   const { model } = gestureState;
   if (!gestureState.enabled || !model || gestureState.running || !state.model) return;
   let inputs;
-  try {
-    inputs = readGestureInputs();
-  } catch (err) {
-    showGestureError(err);
-    return;
+  if (ui.gestureSource.value === 'camera') {
+    // Direkt aus der Kamera, ohne Umweg über die (verzögert nachfahrende) simulierte Hand – wie später auf dem Pi.
+    inputs = state.handActuators;
+    if (!inputs) {
+      ui.gestureDetected.textContent = '';
+      ui.gestureStatus.textContent = camera.running
+        ? 'Keine Hand im Bild.'
+        : 'Wartet auf die Kamera – oben bei „Kamera & Hand-Tracking“ aktivieren.';
+      return;
+    }
+  } else {
+    try {
+      inputs = readGestureInputs();
+    } catch (err) {
+      showGestureError(err);
+      return;
+    }
   }
   gestureState.running = model
     .run(inputs)
@@ -808,7 +849,8 @@ function showGestureResult(inputs, values, inferenceMs) {
     gestureState.bars[i].bar.style.width = `${Math.min(1, Math.max(0, v)) * 100}%`;
   });
   ui.gestureDetected.textContent = `Erkannt: ${GESTURE_NAMES[label] ?? label} (${(values[best] * 100).toFixed(0)} %)`;
-  ui.gestureStatus.textContent = `${inferenceMs.toFixed(2)} ms pro Auswertung im Browser`;
+  const source = ui.gestureSource.value === 'camera' ? 'echte Hand (Kamera)' : 'simulierte Hand';
+  ui.gestureStatus.textContent = `Eingabe: ${source} · ${inferenceMs.toFixed(2)} ms pro Auswertung im Browser`;
 }
 
 function fillGestureModelSelect(selected = 0) {
@@ -939,6 +981,8 @@ window.sim = {
   get mujoco() { return state.mujoco; },
   /** Zuletzt erkannte Hand der Kamera ({ landmarks, worldLandmarks, handedness, score }) oder null. */
   get hand() { return state.hand; },
+  /** Daraus berechnete 8 Aktuator-Stellungen in rad (Reihenfolge wie gestureModel.inputs) oder null. */
+  get handActuators() { return state.handActuators; },
   /** Kamera wie beim ESP32 (siehe esp32Camera.js). */
   camera: {
     /** Einstellung { frameSize, pixelFormat, jpegQuality } – entspricht .frame_size, .pixel_format, .jpeg_quality. */

@@ -47,6 +47,8 @@
           <button id="camera-toggle">Kamera aktivieren</button>
         </div>
         <p id="camera-info" class="info">Erkennt die eigene Hand live (MediaPipe).</p>
+        <label class="check"><input id="camera-follow" type="checkbox" checked /> Simulierte Hand folgt der echten Hand</label>
+        <p id="camera-actuators" class="info"></p>
         <p class="hint">Bild wie von der ESP32-CAM (OV2640), Einstellungen wie in <code>camera_config_t</code>:</p>
         <label>Auflösung (frame_size)
           <select id="camera-framesize"></select>
@@ -89,6 +91,12 @@
         <h2>Gesten-Modell (Aktuatoren)</h2>
         <label>Modell (.tflite)
           <select id="gesture-model-select"></select>
+        </label>
+        <label>Eingabe
+          <select id="gesture-source">
+            <option value="camera">Echte Hand (Kamera)</option>
+            <option value="simulation">Simulierte Hand (Slider)</option>
+          </select>
         </label>
         <div class="row">
           <button id="gesture-toggle">Modell starten</button>

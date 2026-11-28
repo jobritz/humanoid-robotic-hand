@@ -77,13 +77,56 @@ In der Browser-Simulation: Bereich **„Gesten-Modell (Aktuatoren)“** → „D
 `labels.txt` zusammen auswählen. Das Modell wertet dann laufend die aktuelle Handstellung aus, gesteuert über die Slider.
 Liegt das Modell eingecheckt unter `model/gesture/output/`, wird es dort automatisch angeboten.
 
+## Echte Hand per Kamera: Landmarken → Aktuator-Stellungen
+
+Damit das Modell Gesten einer echten Hand erkennt, werden die 21 Punkte von MediaPipe (Hand Landmarker,
+„world landmarks“) in die 8 Aktuator-Stellungen umgerechnet:
+
+```
+Kamera → MediaPipe (21 Landmarken) → hand_mapping.py / handMapping.js → 8 Werte in rad → Gesten-Modell → Geste
+```
+
+- **Beugung** je Finger = Summe der Knickwinkel entlang des Fingers, linear abgebildet von „flache Hand“ (0°) bis
+  „Faust“ (90°).
+- **Spreizung** = Winkel des ersten Fingerglieds in der Handebene gegen die Ruhelage, umso schwächer, je stärker der
+  Finger gebeugt ist (begrenzt auf ±35°).
+- Funktioniert für linke und rechte Hand gleich. Ansatz aus `mapping.js` von Jonas Britz (Branch `test-jonasb`), auf rad
+  umgestellt. Die Kalibrierung (`CALIBRATION`) stammt aus 316 Aufnahmen echter Hände (`Testdaten Roboterhand.csv`):
+  mittlere Abweichung zur nachgestellten Zielpose 15–19° bei der Beugung, 16–18° bei der Spreizung.
+
+**Die Umrechnung gibt es zweimal mit identischer Rechnung**: `hand_mapping.py` (Raspberry Pi) und
+`browser-simulation/src/handMapping.js` (Browser, auch für die Aufnahme von Trainingsdaten). Beide werden gegen dieselben
+Testdaten geprüft (`hand_mapping_testdata.json`). Wer eine davon ändert, muss die andere genauso ändern:
+
+```sh
+python test_hand_mapping.py          # Python
+cd ../../browser-simulation && npm test   # JavaScript
+```
+
+Getestet in der Browser-Simulation mit den offiziellen MediaPipe-Testbildern: Faust → Stein (97 %),
+Victory-Zeichen → Schere (97 %), flache Hand → Papier (59–79 %, rechte und linke Hand). Die geringere Sicherheit bei
+Papier liegt am Platzhalter-Modell, das nur die ideale flache Hand kennt. Mit echten Trainingsdaten wird das besser.
+
 ## Eigenen Code anbinden (z. B. Raspberry Pi)
 
-`predict_gesture.py` läuft auch ohne TensorFlow mit dem kleinen Paket `ai-edge-litert`:
+`predict_gesture.py` und `hand_mapping.py` laufen ohne TensorFlow, nur mit dem kleinen Paket `ai-edge-litert`
+(`pip install ai-edge-litert numpy`). Auf den Pi kopieren: `predict_gesture.py`, `gesture_common.py`,
+`hand_mapping.py`, `output/gesture.tflite`, `output/labels.txt`.
 
 ```python
 from predict_gesture import GestureModel
 
 model = GestureModel("output/gesture.tflite")
-name, score = model.gesture([1.57, 0, 1.57, 0, 1.57, 0, 1.57, 0])   # -> ("rock", 0.98)
+
+# aus den 8 Aktuator-Stellungen
+name, score = model.gesture([1.57, 0, 1.57, 0, 1.57, 0, 1.57, 0])      # -> ("rock", 0.97)
+
+# direkt aus MediaPipe (Python, Hand Landmarker), z. B. auf dem Raspberry Pi mit der Pi-Kamera
+result = landmarker.detect_for_video(mp_image, timestamp_ms)
+if result.hand_world_landmarks:
+    name, score = model.gesture_from_landmarks(result.hand_world_landmarks[0])
 ```
+
+Wie MediaPipe und die Kamera auf dem Pi laufen, klärt die Story „Ausführen eines KI-Modells auf dem Raspberry Pi“.
+Wichtig ist nur, dass **world landmarks** übergeben werden (metrische 3D-Koordinaten), nicht die normierten
+Bild-Landmarken.

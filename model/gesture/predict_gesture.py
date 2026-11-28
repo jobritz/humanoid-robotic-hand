@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from gesture_common import ACTUATORS, load_csv, read_labels
+from hand_mapping import landmarks_to_actuators
 
 HERE = Path(__file__).resolve().parent
 
@@ -52,6 +53,11 @@ class GestureModel:
         scores = self.predict(values)
         best = int(scores.argmax())
         return self.labels[best], float(scores[best])
+
+    def gesture_from_landmarks(self, world_landmarks) -> tuple[str, float]:
+        """Direkt aus den 21 MediaPipe-world-landmarks (z. B. result.hand_world_landmarks[0] auf dem Raspberry Pi):
+        rechnet sie mit hand_mapping.py in die 8 Aktuator-Stellungen um und erkennt die Geste."""
+        return self.gesture(landmarks_to_actuators(world_landmarks))
 
 
 def main():

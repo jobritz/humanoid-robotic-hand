@@ -266,11 +266,20 @@ liefert dasselbe. Sinnvolle Werte gibt es erst mit einem trainierten Modell.
 Erkennt die Geste (Stein, Schere, Papier, keine Geste) aus den **8 Aktuator-Stellungen** der Hand statt aus einem
 Kamerabild. Trainiert wird es mit [`model/gesture`](../model/gesture/README.md) (SCRUM-37).
 
-1. Bereich „Gesten-Modell (Aktuatoren)“ → „Datei öffnen…“ → `gesture.tflite` und `labels.txt` zusammen auswählen.
-   Liegt ein trainiertes Modell eingecheckt unter `model/gesture/output/`, steht es direkt in der Auswahl.
-2. Das Modell wertet bei jedem Bild der Simulation die aktuelle Handstellung aus (`data.actuator_length`, also die
-   tatsächliche Gelenkstellung an den Aktuatoren). Mit den Aktuator-Slidern eine Geste einstellen, oben steht z. B.
-   `Erkannt: Schere (99 %)`, darunter die Wahrscheinlichkeit jeder Geste.
+1. Das Modell aus `model/gesture/output/` steht direkt in der Auswahl (zurzeit ein Platzhalter, trainiert mit
+   künstlichen Daten). Andere Modelle: „Datei öffnen…“ → `gesture.tflite` und `labels.txt` zusammen auswählen.
+2. **Eingabe „Echte Hand (Kamera)“** (Standard): Oben „Kamera aktivieren“ und eine Geste in die Kamera zeigen. Die
+   21 Landmarken von MediaPipe werden in die 8 Aktuator-Stellungen umgerechnet ([`src/handMapping.js`](src/handMapping.js),
+   gleiche Rechnung wie `model/gesture/hand_mapping.py` auf dem Raspberry Pi). Unter der Kamera stehen Beugung und
+   Spreizung je Finger in Grad. Ist „Simulierte Hand folgt der echten Hand“ angehakt, macht die simulierte Hand die Geste
+   nach.
+3. **Eingabe „Simulierte Hand (Slider)“**: Das Modell wertet die Stellung der simulierten Hand aus
+   (`data.actuator_length`, die tatsächliche Gelenkstellung an den Aktuatoren). Geste mit den Aktuator-Slidern einstellen.
+4. Oben steht z. B. `Erkannt: Schere (97 %)`, darunter die Wahrscheinlichkeit jeder Geste.
+
+Tipp: Erkennt MediaPipe die Hand schlecht, unter „Kamera & Hand-Tracking“ eine größere Auflösung (z. B. VGA) und eine
+Farbcodierung wählen. Die Voreinstellung (QVGA, Graustufen) entspricht der ESP32-Kamera und ist für die offene Hand
+oft zu grob.
 
 Eingabe: `float32 [1, 8]` in rad, Reihenfolge `index_flex, index_abd, middle_flex, middle_abd, ring_flex, ring_abd,
 thumb_flex, thumb_abd`. Modelle mit einer anderen Eingabe (z. B. Bildmodelle) werden mit einer Fehlermeldung abgelehnt.
@@ -283,6 +292,7 @@ Für die Anbindung der Posenschätzung (Landmarken → Gelenkwinkel) gibt es im 
 window.sim.setControls({ index_flex: 0.8, thumb_abd: 0.3 }); // Aktuator-Sollwerte in rad (Physik-Modus)
 window.sim.setJoints({ index_mcp: 0.8, index_pip: 0.8 });    // Gelenkwinkel in rad (Kinematik-Modus)
 window.sim.hand                                            // zuletzt erkannte Hand der Kamera (siehe oben) oder null
+window.sim.handActuators                                   // daraus berechnete 8 Aktuator-Stellungen in rad oder null
 window.sim.camera.setConfig({ frameSize: 'QQVGA' });       // Kamera wie beim ESP32 einstellen, auch im Betrieb
 window.sim.camera.config                                   // { frameSize, pixelFormat, jpegQuality }
 window.sim.camera.frame                                    // letztes Kamerabild wie camera_fb_t oder null
@@ -334,6 +344,7 @@ browser-simulation/
    ├─ esp32Camera.js   Webcam als ESP32-Kamera: Auflösungen, Farbcodierungen, Bildpuffer wie camera_fb_t
    ├─ esp32Model.js    KI-Modell für den ESP32 mit LiteRT.js: Vorverarbeitung und (De-)Quantisierung wie die Firmware
    ├─ gestureModel.js  Gesten-Modell mit den 8 Aktuator-Stellungen als Eingabe (LiteRT.js)
+   ├─ handMapping.js   MediaPipe-Landmarken → 8 Aktuator-Stellungen (wie model/gesture/hand_mapping.py)
    ├─ tfliteInfo.js    Liest Ein-/Ausgaben, Quantisierung und Operatoren aus .tflite-Dateien
    ├─ handTracking.js  MediaPipe Hand Landmarker, Landmarken-Overlay der Vorschau
    └─ style.css
