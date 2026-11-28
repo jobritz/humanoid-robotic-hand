@@ -133,7 +133,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.95em; }
 }
 #drop-overlay[hidden] { display: none; }
 
-/* Kleine Kameravorschau unten rechts: das Webcam-Bild, deckungsgleich darüber die Landmarken. */
+/* Kleine Kameravorschau unten rechts: das Kamerabild (Auflösung, Farbcodierung), deckungsgleich darüber die Landmarken. */
 #camera-preview {
   position: absolute;
   right: 12px;
@@ -152,13 +152,20 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.95em; }
   width: 100%;
   transform: scaleX(-1);
 }
-#camera-preview video { height: auto; aspect-ratio: auto 4 / 3; }
+/* Die Höhe ergibt sich aus der Auflösung des Kamerabildes (width/height der Canvas). */
+#camera-frame { position: relative; height: auto; }
+/* Kleine Auflösungen pixelgenau vergrößern, damit sichtbar bleibt, was das Hand-Tracking tatsächlich bekommt. */
+#camera-frame.pixelated { image-rendering: pixelated; }
+/* Das Video ist nur die Quelle und liegt verdeckt unter dem Kamerabild statt ausgeblendet:
+   requestVideoFrameCallback ist laut Spezifikation an die Darstellung des Videos gekoppelt. */
+#camera-preview video,
 #camera-overlay {
   position: absolute;
   inset: 0;
   height: 100%;
-  pointer-events: none;
 }
+#camera-preview video { object-fit: cover; }
+#camera-overlay { pointer-events: none; }
 
 /* Balken je Ausgabe des Gesten-Modells. */
 .prob-bar { height: 6px; border-radius: 3px; background: #2a2e37; overflow: hidden; }

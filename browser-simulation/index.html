@@ -49,6 +49,19 @@
         <p id="camera-info" class="info">Erkennt die eigene Hand live (MediaPipe).</p>
         <label class="check"><input id="camera-follow" type="checkbox" checked /> Simulierte Hand folgt der echten Hand</label>
         <p id="camera-actuators" class="info"></p>
+        <label>Auflösung
+          <select id="camera-framesize"></select>
+        </label>
+        <label>Farbcodierung
+          <select id="camera-pixformat"></select>
+        </label>
+        <div id="camera-quality-row" class="control">
+          <div class="control-head">
+            <span>JPEG-Qualität (0 = beste)</span><output id="camera-quality-value"></output>
+          </div>
+          <input id="camera-quality" type="range" min="0" max="63" step="1" />
+        </div>
+        <p id="camera-frame-info" class="info"></p>
       </section>
 
       <section>
@@ -115,6 +128,7 @@
       <div id="drop-overlay" hidden>Modellordner hier ablegen</div>
       <div id="camera-preview" hidden>
         <video id="camera-video" autoplay muted playsinline></video>
+        <canvas id="camera-frame"></canvas>
         <canvas id="camera-overlay"></canvas>
       </div>
     </main>

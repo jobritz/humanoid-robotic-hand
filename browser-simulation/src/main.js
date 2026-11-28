@@ -10,7 +10,7 @@ import {
   findEntryCandidates,
 } from './mujoco.js';
 import { HandTracker, drawHand } from './handTracking.js';
-import { Webcam } from './webcam.js';
+import { Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './camera.js';
 import {
   GestureModel,
   GESTURE_INPUTS,
@@ -42,8 +42,15 @@ const ui = {
   cameraInfo: $('camera-info'),
   cameraFollow: $('camera-follow'),
   cameraActuators: $('camera-actuators'),
+  cameraFrameSize: $('camera-framesize'),
+  cameraPixelFormat: $('camera-pixformat'),
+  cameraQualityRow: $('camera-quality-row'),
+  cameraQuality: $('camera-quality'),
+  cameraQualityValue: $('camera-quality-value'),
+  cameraFrameInfo: $('camera-frame-info'),
   cameraPreview: $('camera-preview'),
   cameraVideo: $('camera-video'),
+  cameraFrame: $('camera-frame'),
   cameraOverlay: $('camera-overlay'),
   gestureModelSelect: $('gesture-model-select'),
   gestureSource: $('gesture-source'),
@@ -325,9 +332,12 @@ const HANDEDNESS = { Left: 'Linke', Right: 'Rechte' };
 const BYTES = new Intl.NumberFormat('de-DE');
 
 const tracker = new HandTracker();
-const camera = new Webcam(ui.cameraVideo, {
-  onFrame(video, timestamp) {
-    if (tracker.ready) trackHand(video, timestamp); // sonst wird das Handmodell noch geladen
+const camera = new Camera(ui.cameraVideo, ui.cameraFrame, {
+  onFrame(frame) {
+    updateFrameInfo();
+    // Kleine Auflösungen pixelgenau vergrößern (siehe style.css).
+    ui.cameraFrame.classList.toggle('pixelated', ui.cameraFrame.clientWidth * devicePixelRatio >= 2 * frame.width);
+    if (tracker.ready) trackHand(frame); // sonst wird das Handmodell noch geladen
   },
   onError(err) {
     console.error(err);
@@ -339,8 +349,9 @@ const camera = new Webcam(ui.cameraVideo, {
 /** Glättet die Ansteuerung der simulierten Hand (nicht die Eingabe des Gesten-Modells, die bleibt ungeglättet). */
 const followSmoother = new Smoother(0.5);
 
-function trackHand(video, timestamp) {
-  const hand = tracker.detect(video, timestamp);
+function trackHand(frame) {
+  // Erkannt wird auf dem angezeigten Kamerabild, also mit der eingestellten Auflösung und Farbcodierung.
+  const hand = tracker.detect(ui.cameraFrame, frame.timestamp);
   state.hand = hand;
   // Landmarken → 8 Aktuator-Stellungen, gleiche Rechnung wie auf dem Raspberry Pi (hand_mapping.py).
   state.handActuators = hand ? landmarksToActuators(hand.worldLandmarks) : null;
@@ -352,8 +363,7 @@ function trackHand(video, timestamp) {
     setControls(Object.fromEntries(GESTURE_INPUTS.map((name, i) => [name, values[i]])));
   }
   drawHand(ui.cameraOverlay, hand);
-  const { width, height } = camera.resolution ?? {};
-  const rate = `${width}×${height} · ${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
+  const rate = `${camera.fps.toFixed(0)} FPS (${tracker.delegate})`;
   setCameraInfo(
     hand
       ? `${HANDEDNESS[hand.handedness] ?? hand.handedness} Hand erkannt (${Math.round(hand.score * 100)} %) · ${rate}`
@@ -403,6 +413,7 @@ function setCameraActive(active) {
     state.handActuators = null;
     showHandActuators();
     drawHand(ui.cameraOverlay, null);
+    updateFrameInfo();
   }
 }
 
@@ -410,6 +421,45 @@ function setCameraInfo(text, isError = false) {
   ui.cameraInfo.textContent = text;
   ui.cameraInfo.classList.toggle('error', isError);
 }
+
+/** Übernimmt eine (Teil-)Einstellung der Kamera, auch während sie läuft; wirft bei ungültigen Werten. */
+function setCameraConfig(changes) {
+  camera.setConfig(changes);
+  showCameraConfig();
+}
+
+function showCameraConfig() {
+  const { frameSize, pixelFormat, jpegQuality } = camera.config;
+  ui.cameraFrameSize.value = frameSize;
+  ui.cameraPixelFormat.value = pixelFormat;
+  ui.cameraQuality.value = jpegQuality;
+  ui.cameraQualityValue.textContent = jpegQuality;
+  ui.cameraQualityRow.hidden = pixelFormat !== 'JPEG';
+  updateFrameInfo();
+}
+
+/** Größe des Kamerabildes; bei laufender Kamera die des letzten Bildes und die Webcam-Auflösung. */
+function updateFrameInfo() {
+  const { frame, webcam, config } = camera;
+  if (frame) {
+    const source = `Webcam ${webcam.width}×${webcam.height}${webcam.upscaled ? ' (hochskaliert)' : ''}`;
+    ui.cameraFrameInfo.textContent =
+      `${frame.width}×${frame.height} ${frame.format}: ${BYTES.format(frame.len)} Byte pro Bild · ${source}`;
+    return;
+  }
+  const { width, height } = getFrameSize(config.frameSize);
+  const bytes = frameBufferSize(config);
+  ui.cameraFrameInfo.textContent =
+    `${width}×${height} ${config.pixelFormat}: ${bytes ? `${BYTES.format(bytes)} Byte pro Bild` : 'Größe je nach Bildinhalt'}`;
+}
+
+ui.cameraFrameSize.replaceChildren(
+  ...FRAME_SIZES.map((s) => new Option(`${s.name} – ${s.width}×${s.height}`, s.name)),
+);
+ui.cameraPixelFormat.replaceChildren(
+  ...PIXEL_FORMATS.map((f) => new Option(`${f.name} – ${f.description}`, f.name)),
+);
+showCameraConfig();
 
 // ---------------------------------------------------------------------------
 // Schere, Stein, Papier: Posen der simulierten Hand und Gegenpose zum Gewinnen
@@ -648,6 +698,9 @@ document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', () => setMode(r.value)),
 );
 ui.cameraToggle.addEventListener('click', toggleCamera);
+ui.cameraFrameSize.addEventListener('change', () => setCameraConfig({ frameSize: ui.cameraFrameSize.value }));
+ui.cameraPixelFormat.addEventListener('change', () => setCameraConfig({ pixelFormat: ui.cameraPixelFormat.value }));
+ui.cameraQuality.addEventListener('input', () => setCameraConfig({ jpegQuality: Number(ui.cameraQuality.value) }));
 
 ui.gestureWin.addEventListener('click', async () => {
   if (gestureState.winEnabled) return setGestureWinEnabled(false);
@@ -735,14 +788,19 @@ window.sim = {
   get hand() { return state.hand; },
   /** Daraus berechnete 8 Aktuator-Stellungen in rad (Reihenfolge wie gestureModel.inputs) oder null. */
   get handActuators() { return state.handActuators; },
-  /** Webcam (siehe webcam.js). */
+  /** Kamera (siehe camera.js). */
   camera: {
     /** Läuft die Kamera? */
     get running() { return camera.running; },
-    /** Tatsächliche Auflösung { width, height } oder null. */
-    get resolution() { return camera.resolution; },
-    /** Ausgewertete Bilder pro Sekunde. */
-    get fps() { return camera.fps; },
+    /** Einstellung { frameSize, pixelFormat, jpegQuality }. */
+    get config() { return { ...camera.config }; },
+    /** Letztes Kamerabild ({ buf, len, width, height, format, timestamp }) oder null. */
+    get frame() { return camera.frame; },
+    /** Ändert die Einstellung, auch bei laufender Kamera, z. B. setConfig({ frameSize: 'HD', pixelFormat: 'JPEG' }). */
+    setConfig(changes) {
+      setCameraConfig(changes);
+      return { ...camera.config };
+    },
   },
   /** Setzt Gelenkwinkel (rad bzw. m) nach Name und aktualisiert die Kinematik. */
   setJoints(values) {

@@ -53,6 +53,7 @@ Mitgelieferte Modelle:
 | Physik (Aktuatoren) | Simulation läuft in Echtzeit, Slider setzen die Aktuator-Sollwerte (`data.ctrl`) |
 | Kinematik (Gelenke) | Keine Dynamik, Slider setzen Gelenkwinkel direkt (`data.qpos`) |
 | Kamera aktivieren / beenden | Startet bzw. stoppt Webcam und Hand-Tracking, Vorschau unten rechts |
+| Auflösung, Farbcodierung, JPEG-Qualität | Kamerabild einstellen, wirkt sofort, auch bei laufender Kamera |
 | Simulierte Hand folgt der echten Hand | Die erkannte Hand steuert die simulierte Hand (Physik-Modus) |
 | Gesten-Modell | Modell starten, Eingabe wählen (Kamera oder Slider), erkannte Geste ansehen |
 | Schere, Stein, Papier gewinnen | Die simulierte Hand zeigt die Gegenpose zur erkannten Geste |
@@ -64,19 +65,37 @@ Mitgelieferte Modelle:
 Die eigene Hand wird live über die Webcam erkannt, der erste Schritt der optischen Teleoperation. Die Erkennung läuft
 komplett im Browser, das Kamerabild verlässt den Rechner nicht.
 
-1. Auf **Kamera aktivieren** klicken und den Kamerazugriff im Browser erlauben.
-2. Unten rechts in der 3D-Ansicht erscheint das Kamerabild (gespiegelt wie ein Spiegel) mit den 21 erkannten
-   Landmarken: Daumen orange, Zeigefinger blau, Mittelfinger grün, Ringfinger gelb, kleiner Finger lila.
-3. Die Statuszeile zeigt die erkannte Hand (links/rechts mit Sicherheit), Auflösung, ausgewertete Bilder pro Sekunde und
-   ob die Erkennung auf der GPU oder CPU läuft, z. B. `Rechte Hand erkannt (98 %) · 640×480 · 30 FPS (GPU)`.
+1. Auflösung und Farbcodierung wählen (Standard: VGA 640×480, RGB565 in Farbe). Änderungen wirken auch bei laufender
+   Kamera.
+2. Auf **Kamera aktivieren** klicken und den Kamerazugriff im Browser erlauben.
+3. Unten rechts in der 3D-Ansicht erscheint das Kamerabild (gespiegelt wie ein Spiegel) mit den 21 erkannten
+   Landmarken: Daumen orange, Zeigefinger blau, Mittelfinger grün, Ringfinger gelb, kleiner Finger lila. Angezeigt und
+   ausgewertet wird genau das eingestellte Bild, also z. B. Graustufen bei `GRAYSCALE` oder Blockartefakte bei starker
+   JPEG-Kompression. Kleine Auflösungen werden pixelgenau vergrößert.
+   Die Statuszeile zeigt die erkannte Hand (links/rechts mit Sicherheit), die ausgewerteten Bilder pro Sekunde und
+   ob die Erkennung auf der GPU oder CPU läuft, z. B. `Rechte Hand erkannt (98 %) · 30 FPS (GPU)`. Unter den
+   Einstellungen stehen Größe des letzten Bildes und Auflösung der Webcam, z. B.
+   `640×480 RGB565: 614.400 Byte pro Bild · Webcam 640×480`.
 4. Darunter stehen Beugung und Spreizung je Finger in Grad, umgerechnet aus den Landmarken
    ([`src/handMapping.js`](src/handMapping.js), gleiche Rechnung wie `model/gesture/hand_mapping.py` auf dem Raspberry Pi).
    Mit **Simulierte Hand folgt der echten Hand** macht die simulierte Hand die Bewegung nach (leicht geglättet).
 5. **Kamera beenden** schaltet Kamera und Tracking wieder aus.
 
+**Einstellungen** ([`src/camera.js`](src/camera.js)): Die Auflösungen und Farbcodierungen entsprechen denen des
+Kamerasensors OV2640, mit dem das Projekt begonnen hat.
+
+| Einstellung | Werte |
+| --- | --- |
+| Auflösung | `96X96` bis `UXGA` 1600×1200, u. a. `QVGA` 320×240, `VGA` 640×480, `HD` 1280×720. Das Webcam-Bild wird mittig auf das Seitenverhältnis zugeschnitten und skaliert. |
+| Farbcodierung | `RGB565` (Farbe, 16 Bit), `YUV422` (Farbe), `GRAYSCALE` (Graustufen, 8 Bit), `JPEG` (komprimiert) |
+| JPEG-Qualität | nur bei `JPEG`: 0–63, kleiner = bessere Qualität |
+
+Für das Hand-Tracking eignet sich ein Farbbild ab VGA am besten. In kleinen Graustufenbildern (z. B. QVGA, `GRAYSCALE`)
+wird vor allem die flache Hand oft nicht gefunden.
+
 **Technik:** [`@mediapipe/tasks-vision`](https://www.npmjs.com/package/@mediapipe/tasks-vision) (Hand Landmarker im
-Video-Modus, eine Hand) auf dem Webcam-Video (angefordert 640×480, [`src/webcam.js`](src/webcam.js)). Jedes neue Bild
-wird genau einmal ausgewertet (`requestVideoFrameCallback`). Gerechnet wird bevorzugt per WebGL auf der GPU; schlägt das
+Video-Modus, eine Hand) auf dem eingestellten Kamerabild. Jedes neue Webcam-Bild wird genau einmal umgerechnet und
+ausgewertet (`requestVideoFrameCallback`). Gerechnet wird bevorzugt per WebGL auf der GPU; schlägt das
 fehl, wird automatisch die CPU verwendet. Gemessen auf einem Laptop mit Intel Iris Xe: ca. 18 ms pro Bild auf der GPU,
 ca. 60 ms auf der CPU (dann sinkt auch die Bildrate der Simulation deutlich). Die WASM-Laufzeit stammt direkt aus dem
 npm-Paket, das Modell liegt unter `public/mediapipe/hand_landmarker.task`, damit alles auch offline funktioniert
@@ -148,7 +167,9 @@ window.sim.setControls({ index_flex: 0.8, thumb_abd: 0.3 }); // Aktuator-Sollwer
 window.sim.setJoints({ index_mcp: 0.8, index_pip: 0.8 });    // Gelenkwinkel in rad (Kinematik-Modus)
 window.sim.hand                                            // zuletzt erkannte Hand der Kamera (siehe oben) oder null
 window.sim.handActuators                                   // daraus berechnete 8 Aktuator-Stellungen in rad oder null
-window.sim.camera.running / .resolution / .fps             // Zustand der Webcam
+window.sim.camera.setConfig({ frameSize: 'HD', pixelFormat: 'JPEG' }); // Kamera einstellen, auch im Betrieb
+window.sim.camera.config                                   // { frameSize, pixelFormat, jpegQuality }
+window.sim.camera.frame                                    // letztes Kamerabild { buf, len, width, height, format, timestamp } oder null
 window.sim.model / window.sim.data / window.sim.mujoco    // direkter Zugriff auf MuJoCo
 
 // Gesten-Modell (Aktuatoren)
@@ -178,7 +199,7 @@ browser-simulation/
    ├─ main.js          UI, Simulationsschleife, Kamera, Gesten-Modell, window.sim
    ├─ mujoco.js        Laden der WASM-Engine, Kompilieren über das virtuelle Dateisystem
    ├─ renderer.js      three.js-Darstellung der Geoms (Primitive + Meshes)
-   ├─ webcam.js        Webcam starten/stoppen, jedes neue Bild genau einmal melden
+   ├─ camera.js        Webcam mit einstellbarer Auflösung, Farbcodierung und JPEG-Qualität
    ├─ handTracking.js  MediaPipe Hand Landmarker, Landmarken-Overlay der Vorschau
    ├─ handMapping.js   MediaPipe-Landmarken → 8 Aktuator-Stellungen (wie model/gesture/hand_mapping.py)
    ├─ gestureModel.js  Gesten-Modell mit den 8 Aktuator-Stellungen als Eingabe (LiteRT.js)
