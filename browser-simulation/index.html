@@ -86,6 +86,25 @@
       </section>
 
       <section>
+        <h2>Gesten-Modell (Aktuatoren)</h2>
+        <label>Modell (.tflite)
+          <select id="gesture-model-select"></select>
+        </label>
+        <div class="row">
+          <button id="gesture-toggle">Modell starten</button>
+          <button id="gesture-open">Datei öffnen…</button>
+        </div>
+        <input id="gesture-file-input" type="file" accept=".tflite,.txt" multiple hidden />
+        <p id="gesture-info" class="info">Erkennt die Geste aus den 8 Aktuator-Stellungen der Hand (erzeugt mit <code>model/gesture</code>).</p>
+        <p class="hint">Beim Öffnen <code>gesture.tflite</code> und <code>labels.txt</code> zusammen auswählen.</p>
+        <div id="gesture-result" hidden>
+          <p id="gesture-detected" class="gesture-detected"></p>
+          <div id="gesture-outputs"></div>
+        </div>
+        <p id="gesture-status" class="info"></p>
+      </section>
+
+      <section>
         <h2>Trainingsdaten aufnehmen</h2>
         <div class="row">
           <button id="rec-random">Zufallspose</button>

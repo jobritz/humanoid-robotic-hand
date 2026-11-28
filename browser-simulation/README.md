@@ -261,6 +261,20 @@ denen des ESP32.
 werden im Netz so klein, dass die Ausgabe bei jedem Bild `0.500` ist. Das ist kein Fehler der Simulation, der ESP32
 liefert dasselbe. Sinnvolle Werte gibt es erst mit einem trainierten Modell.
 
+## Gesten-Modell (Aktuatoren)
+
+Erkennt die Geste (Stein, Schere, Papier, keine Geste) aus den **8 Aktuator-Stellungen** der Hand statt aus einem
+Kamerabild. Trainiert wird es mit [`model/gesture`](../model/gesture/README.md) (SCRUM-37).
+
+1. Bereich „Gesten-Modell (Aktuatoren)“ → „Datei öffnen…“ → `gesture.tflite` und `labels.txt` zusammen auswählen.
+   Liegt ein trainiertes Modell eingecheckt unter `model/gesture/output/`, steht es direkt in der Auswahl.
+2. Das Modell wertet bei jedem Bild der Simulation die aktuelle Handstellung aus (`data.actuator_length`, also die
+   tatsächliche Gelenkstellung an den Aktuatoren). Mit den Aktuator-Slidern eine Geste einstellen, oben steht z. B.
+   `Erkannt: Schere (99 %)`, darunter die Wahrscheinlichkeit jeder Geste.
+
+Eingabe: `float32 [1, 8]` in rad, Reihenfolge `index_flex, index_abd, middle_flex, middle_abd, ring_flex, ring_abd,
+thumb_flex, thumb_abd`. Modelle mit einer anderen Eingabe (z. B. Bildmodelle) werden mit einer Fehlermeldung abgelehnt.
+
 ## Schnittstelle für die Ansteuerung
 
 Für die Anbindung der Posenschätzung (Landmarken → Gelenkwinkel) gibt es im Browser das Objekt `window.sim`:
@@ -282,6 +296,14 @@ await window.sim.esp32Model.run(frame)     // eigenes Bild auswerten, aufgebaut 
 window.sim.esp32Model.setLabels(['offen', 'Faust', 'Zeigen']); // Ausgaben beschriften ([] = Output[i])
 window.sim.esp32Model.setHandMapping((values) => ({ thumb_flex: values[0] * 1.57 })); // eigene Ansteuerung, null = Platzhalter
 window.sim.esp32Model.driveHand = true;    // Ansteuerung der Hand ein/aus (wie die Checkbox)
+
+// Gesten-Modell (Aktuatoren)
+window.sim.gestureModel.inputs             // Reihenfolge der 8 Eingaben
+window.sim.gestureModel.info               // geladenes Modell { name, size, labels, operators } oder null
+window.sim.gestureModel.result             // letztes Ergebnis { inputs, values, label, score, inferenceMs } oder null
+await window.sim.gestureModel.load(url, labelsText) // Modell (URL, File, Uint8Array) + labels.txt-Text oder Array laden
+await window.sim.gestureModel.run([1.57, 0, 1.57, 0, 1.57, 0, 1.57, 0]) // eigene Werte → { values, label, score }
+await window.sim.gestureModel.run()        // aktuelle Handstellung auswerten
 
 // Beispiel: Abstand zwischen Daumen- und Zeigefingerspitze in cm
 const p = window.sim.hand.worldLandmarks;
@@ -311,6 +333,7 @@ browser-simulation/
    ├─ renderer.js      three.js-Darstellung der Geoms (Primitive + Meshes)
    ├─ esp32Camera.js   Webcam als ESP32-Kamera: Auflösungen, Farbcodierungen, Bildpuffer wie camera_fb_t
    ├─ esp32Model.js    KI-Modell für den ESP32 mit LiteRT.js: Vorverarbeitung und (De-)Quantisierung wie die Firmware
+   ├─ gestureModel.js  Gesten-Modell mit den 8 Aktuator-Stellungen als Eingabe (LiteRT.js)
    ├─ tfliteInfo.js    Liest Ein-/Ausgaben, Quantisierung und Operatoren aus .tflite-Dateien
    ├─ handTracking.js  MediaPipe Hand Landmarker, Landmarken-Overlay der Vorschau
    └─ style.css

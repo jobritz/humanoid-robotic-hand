@@ -13,6 +13,13 @@ import { HandTracker, drawHand } from './handTracking.js';
 import { Esp32Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './esp32Camera.js';
 import { Esp32Model, FIRMWARE_MODEL_URL } from './esp32Model.js';
 import firmwareLabelsText from '../../model/output/labels.txt?raw';
+import {
+  GestureModel,
+  GESTURE_INPUTS,
+  BUNDLED_GESTURE_MODEL,
+  BUNDLED_GESTURE_LABELS,
+  parseLabels,
+} from './gestureModel.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -54,6 +61,15 @@ const ui = {
   aiDriveHand: $('ai-drive-hand'),
   aiWin: $('ai-win'),
   aiStatus: $('ai-status'),
+  gestureModelSelect: $('gesture-model-select'),
+  gestureToggle: $('gesture-toggle'),
+  gestureOpen: $('gesture-open'),
+  gestureFileInput: $('gesture-file-input'),
+  gestureInfo: $('gesture-info'),
+  gestureResult: $('gesture-result'),
+  gestureDetected: $('gesture-detected'),
+  gestureOutputs: $('gesture-outputs'),
+  gestureStatus: $('gesture-status'),
 };
 
 const firmwareLabels = firmwareLabelsText
@@ -295,6 +311,7 @@ function frame(now) {
   renderer.update(data);
   renderer.render();
   ui.simInfo.textContent = `t = ${data.time.toFixed(2)} s · ${fps.toFixed(0)} FPS`;
+  runGestureModel();
 }
 
 function setPaused(paused) {
@@ -657,6 +674,148 @@ function fillAiModelSelect(selected = 0) {
 fillAiModelSelect();
 
 // ---------------------------------------------------------------------------
+// Gesten-Modell mit Aktuator-Stellungen als Eingabe (siehe gestureModel.js)
+// ---------------------------------------------------------------------------
+
+const GESTURE_NAMES = { rock: 'Stein', paper: 'Papier', scissors: 'Schere', nothing: 'Keine Geste' };
+
+const gestureState = {
+  /** Auswahl im Panel: mitgeliefertes Modell (falls trainiert und eingecheckt) und geöffnete Dateien. */
+  sources: BUNDLED_GESTURE_MODEL
+    ? [{ label: 'model/gesture/output/gesture.tflite', source: BUNDLED_GESTURE_MODEL, name: 'gesture.tflite', labels: BUNDLED_GESTURE_LABELS }]
+    : [],
+  model: null, // geladenes GestureModel
+  labels: [],
+  enabled: false,
+  running: null, // laufende Auswertung (Promise); solange wird kein neuer Durchlauf gestartet
+  result: null, // { inputs, values, label, score, inferenceMs }
+  bars: [],
+};
+
+/**
+ * Aktuelle Stellung der 8 Aktuatoren in rad, Reihenfolge wie GESTURE_INPUTS. Gelesen wird actuator_length, also die
+ * tatsächliche Gelenkstellung am Aktuator – im Physik-Modus (Slider setzen Sollwerte) wie im Kinematik-Modus.
+ */
+function readGestureInputs() {
+  const { mujoco, model, data } = state;
+  const lengths = data.actuator_length;
+  return GESTURE_INPUTS.map((name) => {
+    const id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR.value, name);
+    if (id < 0) throw new Error(`Das geladene Handmodell hat keinen Aktuator „${name}“.`);
+    return lengths[id];
+  });
+}
+
+async function loadGestureModel({ source, name, labels = [] }) {
+  setGestureInfo(`Lade ${name}…`);
+  ui.gestureToggle.disabled = true;
+  try {
+    const model = await GestureModel.load(source, { name });
+    const old = gestureState.model;
+    gestureState.model = null;
+    await gestureState.running;
+    old?.delete();
+    gestureState.model = model;
+    gestureState.labels = labels;
+    gestureState.result = null;
+    showGestureModel();
+  } finally {
+    ui.gestureToggle.disabled = false;
+  }
+}
+
+function loadSelectedGestureModel() {
+  const selected = gestureState.sources[ui.gestureModelSelect.value];
+  if (!selected) throw new Error('Kein Gesten-Modell vorhanden – mit „Datei öffnen…“ gesture.tflite und labels.txt wählen.');
+  return loadGestureModel(selected);
+}
+
+async function toggleGestureModel() {
+  if (gestureState.enabled) return setGestureEnabled(false);
+  if (!gestureState.model) await loadSelectedGestureModel();
+  setGestureEnabled(true);
+}
+
+function setGestureEnabled(enabled) {
+  gestureState.enabled = enabled;
+  ui.gestureToggle.textContent = enabled ? 'Modell stoppen' : 'Modell starten';
+  ui.gestureResult.hidden = !enabled;
+  if (!enabled) ui.gestureStatus.textContent = '';
+}
+
+function setGestureInfo(text, isError = false) {
+  ui.gestureInfo.textContent = text;
+  ui.gestureInfo.classList.toggle('error', isError);
+}
+
+function showGestureError(err) {
+  console.error(err);
+  setGestureEnabled(false);
+  setGestureInfo(err.message, true);
+}
+
+function showGestureModel() {
+  const { name, size, outputs, operators } = gestureState.model;
+  const count = outputs.reduce((n, o) => n + o.shape.reduce((a, b) => a * b, 1), 0);
+  const missing = gestureState.labels.length ? '' : ' · ohne labels.txt';
+  setGestureInfo(`${name}, ${BYTES.format(size)} Byte · Eingabe 8 Aktuatoren · ${count} Gesten · Operatoren: ${operators.join(', ')}${missing}`);
+  gestureState.bars = Array.from({ length: count }, (_, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'control';
+    wrap.innerHTML = `<div class="control-head"><span></span><output>–</output></div><div class="ai-bar"><span></span></div>`;
+    const label = gestureState.labels[i];
+    wrap.querySelector('span').textContent = label ? (GESTURE_NAMES[label] ?? label) : `Output[${i}]`;
+    return { wrap, output: wrap.querySelector('output'), bar: wrap.querySelector('.ai-bar span') };
+  });
+  ui.gestureOutputs.replaceChildren(...gestureState.bars.map((b) => b.wrap));
+}
+
+/** Wertet die aktuelle Handstellung aus, sofern das Modell läuft und gerade frei ist (aufgerufen je Bild). */
+function runGestureModel() {
+  const { model } = gestureState;
+  if (!gestureState.enabled || !model || gestureState.running || !state.model) return;
+  let inputs;
+  try {
+    inputs = readGestureInputs();
+  } catch (err) {
+    showGestureError(err);
+    return;
+  }
+  gestureState.running = model
+    .run(inputs)
+    .then(({ values, inferenceMs }) => {
+      if (gestureState.model === model && gestureState.enabled) showGestureResult(inputs, values, inferenceMs);
+    })
+    .catch((err) => showGestureError(new Error(`Auswertung fehlgeschlagen: ${err?.message ?? err}`, { cause: err })))
+    .finally(() => {
+      gestureState.running = null;
+    });
+}
+
+function showGestureResult(inputs, values, inferenceMs) {
+  const best = values.reduce((b, v, i) => (v > values[b] ? i : b), 0);
+  const label = gestureState.labels[best] ?? `Output[${best}]`;
+  gestureState.result = { inputs, values, label, score: values[best], inferenceMs };
+  values.forEach((v, i) => {
+    if (!gestureState.bars[i]) return;
+    gestureState.bars[i].output.textContent = v.toFixed(3);
+    gestureState.bars[i].bar.style.width = `${Math.min(1, Math.max(0, v)) * 100}%`;
+  });
+  ui.gestureDetected.textContent = `Erkannt: ${GESTURE_NAMES[label] ?? label} (${(values[best] * 100).toFixed(0)} %)`;
+  ui.gestureStatus.textContent = `${inferenceMs.toFixed(2)} ms pro Auswertung im Browser`;
+}
+
+function fillGestureModelSelect(selected = 0) {
+  ui.gestureModelSelect.replaceChildren(
+    ...(gestureState.sources.length
+      ? gestureState.sources.map((s, i) => new Option(s.label, i, false, i === selected))
+      : [new Option('– noch kein Modell trainiert –', '')]),
+  );
+}
+
+fillGestureModelSelect();
+
+// ---------------------------------------------------------------------------
 // Ereignisse
 // ---------------------------------------------------------------------------
 
@@ -703,6 +862,23 @@ ui.aiFileInput.addEventListener('change', () => {
   ai.sources.push({ label: `Datei: ${file.name}`, source: file, name: file.name });
   fillAiModelSelect(ai.sources.length - 1);
   loadSelectedAiModel().then(() => setAiEnabled(true)).catch(showAiError);
+});
+
+ui.gestureToggle.addEventListener('click', () => toggleGestureModel().catch(showGestureError));
+ui.gestureModelSelect.addEventListener('change', () =>
+  loadSelectedGestureModel().then(() => setGestureEnabled(true)).catch(showGestureError),
+);
+ui.gestureOpen.addEventListener('click', () => ui.gestureFileInput.click());
+ui.gestureFileInput.addEventListener('change', async () => {
+  const files = [...ui.gestureFileInput.files];
+  ui.gestureFileInput.value = '';
+  const file = files.find((f) => f.name.toLowerCase().endsWith('.tflite'));
+  const labelsFile = files.find((f) => f.name.toLowerCase().endsWith('.txt'));
+  if (!file) return showGestureError(new Error('Bitte eine .tflite-Datei auswählen (dazu optional labels.txt).'));
+  const labels = labelsFile ? parseLabels(await labelsFile.text()) : [];
+  gestureState.sources.push({ label: `Datei: ${file.name}`, source: file, name: file.name, labels });
+  fillGestureModelSelect(gestureState.sources.length - 1);
+  loadSelectedGestureModel().then(() => setGestureEnabled(true)).catch(showGestureError);
 });
 
 ui.modelSelect.addEventListener('change', () => {
@@ -811,6 +987,31 @@ window.sim = {
     /** Ansteuerung der Hand ein/aus (wie die Checkbox im Panel). */
     get driveHand() { return ui.aiDriveHand.checked; },
     set driveHand(on) { ui.aiDriveHand.checked = Boolean(on); },
+  },
+  /** Gesten-Modell mit den 8 Aktuator-Stellungen als Eingabe (siehe gestureModel.js). */
+  gestureModel: {
+    /** Reihenfolge der Eingabe. */
+    inputs: GESTURE_INPUTS,
+    /** Geladenes Modell { name, size, labels, operators } oder null. */
+    get info() {
+      const m = gestureState.model;
+      return m && { name: m.name, size: m.size, labels: [...gestureState.labels], operators: m.operators };
+    },
+    /** Letztes Ergebnis { inputs, values, label, score, inferenceMs } oder null. */
+    get result() { return gestureState.result; },
+    /** Lädt ein Modell (URL, File oder Uint8Array) mit Beschriftung (labels.txt-Text oder Array) und startet es. */
+    async load(source, labels = [], name = String(source)) {
+      await loadGestureModel({ source, name, labels: typeof labels === 'string' ? parseLabels(labels) : labels });
+      setGestureEnabled(true);
+      return this.info;
+    },
+    /** Wertet eigene Werte aus (8 Zahlen in rad), unabhängig von der Simulation; ohne Argument die aktuelle Hand. */
+    async run(values = readGestureInputs()) {
+      if (!gestureState.model) throw new Error('Kein Gesten-Modell geladen.');
+      const { values: scores } = await gestureState.model.run(values);
+      const best = scores.reduce((b, v, i) => (v > scores[b] ? i : b), 0);
+      return { values: scores, label: gestureState.labels[best] ?? `Output[${best}]`, score: scores[best] };
+    },
   },
 };
 

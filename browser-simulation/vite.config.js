@@ -70,7 +70,8 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
-    // Das KI-Modell wird direkt aus der Firmware (esp/esp32ai/hand.tflite) geladen, nicht kopiert.
-    fs: { allow: ['.', '../esp/esp32ai'] },
+    // Die KI-Modelle werden direkt aus dem Ordner model/ geladen (Bildmodell model/output, Gesten-Modell
+    // model/gesture/output), nicht kopiert.
+    fs: { allow: ['.', '../model'] },
   },
 });

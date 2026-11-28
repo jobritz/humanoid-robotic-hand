@@ -20,7 +20,7 @@ const INPUT_TYPES = {
 let liteRtPromise;
 
 /** Lädt die WASM-Laufzeit von LiteRT.js genau einmal (bereitgestellt unter /litert/, siehe vite.config.js). */
-function getLiteRt() {
+export function getLiteRt() {
   liteRtPromise ??= loadLiteRt(`${import.meta.env.BASE_URL}litert/`).catch((err) => {
     liteRtPromise = undefined; // beim nächsten Versuch erneut laden
     throw new Error(`LiteRT.js konnte nicht geladen werden: ${err?.message ?? err}`, { cause: err });
@@ -28,7 +28,7 @@ function getLiteRt() {
   return liteRtPromise;
 }
 
-async function readBytes(source) {
+export async function readBytes(source) {
   if (source instanceof Uint8Array) return source;
   if (source instanceof Blob) return new Uint8Array(await source.arrayBuffer());
   const res = await fetch(source);

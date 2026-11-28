@@ -184,6 +184,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.95em; }
 }
 .ai-bar { height: 6px; border-radius: 3px; background: #2a2e37; overflow: hidden; }
 .ai-bar span { display: block; height: 100%; background: var(--accent); }
+.gesture-detected { margin: 4px 0 8px; font-size: 16px; font-weight: 600; }
 
 @media (max-width: 800px) {
   body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
