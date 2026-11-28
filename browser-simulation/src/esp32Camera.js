@@ -40,7 +40,7 @@ export const PIXEL_FORMATS = [
 ];
 
 /** Standard wie die Firmware in esp/esp32cam (main.c): QVGA, JPEG, Qualität 12. */
-export const DEFAULT_CAMERA_CONFIG = Object.freeze({ frameSize: 'QVGA', pixelFormat: 'JPEG', jpegQuality: 12 });
+export const DEFAULT_CAMERA_CONFIG = Object.freeze({ frameSize: 'QVGA', pixelFormat: 'GRAYSCALE', jpegQuality: 12 });
 
 const FRAME_SIZE = new Map(FRAME_SIZES.map((s) => [s.name, s]));
 const PIXEL_FORMAT = new Map(PIXEL_FORMATS.map((f) => [f.name, f]));

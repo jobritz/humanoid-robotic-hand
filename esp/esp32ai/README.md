@@ -21,6 +21,3 @@ idf.py -p PORT flash monitor
 ```
 
 Replace `PORT` with the serial port, e.g. `COM4` on Windows or `/dev/ttyUSB0` on Linux.
-
-## 3. View inference results
-After startup, the device captures camera frames and runs the model continuously. The serial monitor prints scores for all labels.

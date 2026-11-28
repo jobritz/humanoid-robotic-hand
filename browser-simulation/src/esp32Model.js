@@ -5,7 +5,7 @@
 import { loadLiteRt, loadAndCompile, Tensor } from '@litertjs/core';
 import { readTfliteInfo, withStaticShapes } from './tfliteInfo.js';
 import { decodeFrame, luma } from './esp32Camera.js';
-import firmwareModelUrl from '../../esp/esp32ai/hand.tflite?url';
+import firmwareModelUrl from '../../model/output/hand.tflite?url';
 
 /** Modell der Firmware – dieselbe Datei, die create_model.py erzeugt und die in main/model.cc eingebettet ist. */
 export const FIRMWARE_MODEL_URL = firmwareModelUrl;
@@ -52,7 +52,7 @@ export class Esp32Model {
    *   inputRange: Wertebereich der Eingabe beim Training. Standard [0, 255] wie create_model.py (Pixel unverändert);
    *   für Modelle, die mit 0…1 oder -1…1 trainiert wurden, entsprechend [0, 1] bzw. [-1, 1].
    */
-  static async load(source, { name = String(source), inputRange = [0, 255] } = {}) {
+  static async load(source, { name = String(source), inputRange = [-1, 1] } = {}) {
     const bytes = await readBytes(source);
     const info = readTfliteInfo(bytes);
     const input = checkInput(info);

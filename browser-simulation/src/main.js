@@ -12,6 +12,7 @@ import {
 import { HandTracker, drawHand } from './handTracking.js';
 import { Esp32Camera, FRAME_SIZES, PIXEL_FORMATS, getFrameSize, frameBufferSize } from './esp32Camera.js';
 import { Esp32Model, FIRMWARE_MODEL_URL } from './esp32Model.js';
+import firmwareLabelsText from '../../model/output/labels.txt?raw';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -51,8 +52,14 @@ const ui = {
   aiInput: $('ai-input'),
   aiOutputs: $('ai-outputs'),
   aiDriveHand: $('ai-drive-hand'),
+  aiWin: $('ai-win'),
   aiStatus: $('ai-status'),
 };
+
+const firmwareLabels = firmwareLabelsText
+  .split(/\r?\n/)
+  .filter(Boolean)
+  .map((line) => line.replace(/^Output\[\d+\]\s*=\s*/, ''));
 
 const JOINT = { FREE: 0, BALL: 1, SLIDE: 2, HINGE: 3 };
 const MAX_STEPS_PER_FRAME = 200;
@@ -435,6 +442,42 @@ showCameraConfig();
 /** Fingerbeuger der Amazing Hand, der Reihe nach von den Modellausgaben angesteuert (Platzhalter). */
 const FLEX_ACTUATORS = ['index_flex', 'middle_flex', 'ring_flex', 'thumb_flex'];
 
+const WINNING_POSES = {
+  rock: {
+    name: 'Stein',
+    controls: {
+      index_flex: 1.571, index_abd: 0,
+      middle_flex: 1.571, middle_abd: 0,
+      ring_flex: 1.571, ring_abd: 0,
+      thumb_flex: 1.571, thumb_abd: 0,
+    },
+  },
+  paper: {
+    name: 'Papier',
+    controls: {
+      index_flex: 0, index_abd: 0,
+      middle_flex: 0, middle_abd: 0,
+      ring_flex: 0, ring_abd: 0,
+      thumb_flex: 0, thumb_abd: 0,
+    },
+  },
+  scissors: {
+    name: 'Schere',
+    controls: {
+      index_flex: 0, index_abd: 0.157,
+      middle_flex: 0, middle_abd: -0.157,
+      ring_flex: 1.571, ring_abd: 0,
+      thumb_flex: 1.571, thumb_abd: 0,
+    },
+  },
+};
+
+const COUNTER_POSES = {
+  rock: { gesture: 'paper', name: 'Papier' },
+  paper: { gesture: 'scissors', name: 'Schere' },
+  scissors: { gesture: 'rock', name: 'Stein' },
+};
+
 /**
  * Platzhalter für die Ansteuerung der Hand, bis die Abläufe feststehen: Ausgabe i (0…1) beugt Finger i (Zeige-,
  * Mittel-, Ringfinger, Daumen) von 0 bis 90°. Ersetzen mit window.sim.esp32Model.setHandMapping(fn).
@@ -449,10 +492,11 @@ function placeholderHandMapping(values) {
 
 const ai = {
   /** Auswahl im Panel: Firmware-Modell und alle in dieser Sitzung geöffneten Dateien. */
-  sources: [{ label: 'Firmware: esp/esp32ai/hand.tflite', source: FIRMWARE_MODEL_URL, name: 'hand.tflite (Firmware)' }],
+  sources: [{ label: 'Firmware: hand.tflite', source: FIRMWARE_MODEL_URL, name: 'hand.tflite (Firmware)' }],
   model: null, // geladenes Esp32Model
   running: null, // laufende Auswertung (Promise) – solange verfallen neue Kamerabilder wie bei CAMERA_GRAB_LATEST
   enabled: false, // wertet Kamerabilder aus
+  winEnabled: false, // zeigt die gewinnende Gegenpose zur erkannten Geste
   result: null, // letztes Ergebnis { values, timestamp, preprocessMs, inferenceMs }
   labels: [], // Beschriftung der Ausgaben, leer = Output[i] wie im seriellen Monitor des ESP32
   handMapping: placeholderHandMapping,
@@ -492,7 +536,14 @@ function setAiEnabled(enabled) {
   ai.enabled = enabled;
   ui.aiToggle.textContent = enabled ? 'Modell stoppen' : 'Modell starten';
   ui.aiResult.hidden = !enabled;
+  if (!enabled) setAiWinEnabled(false);
   showAiWaiting();
+}
+
+function setAiWinEnabled(enabled) {
+  ai.winEnabled = enabled;
+  ui.aiWin.textContent = enabled ? 'Gewinnmodus beenden' : 'Schere, Stein, Papier gewinnen';
+  ui.aiDriveHand.disabled = enabled;
 }
 
 /** Hinweis, solange das Modell läuft, aber keine Kamerabilder kommen. */
@@ -525,11 +576,12 @@ function showAiModel() {
 }
 
 function buildAiOutputs(count) {
+  const labels = ai.labels.length ? ai.labels : firmwareLabels;
   ai.bars = Array.from({ length: count }, (_, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'control';
     wrap.innerHTML = `<div class="control-head"><span></span><output>–</output></div><div class="ai-bar"><span></span></div>`;
-    wrap.querySelector('span').textContent = ai.labels[i] ?? `Output[${i}]`;
+    wrap.querySelector('span').textContent = labels[i] ?? `Output[${i}]`;
     return { wrap, output: wrap.querySelector('output'), bar: wrap.querySelector('.ai-bar span') };
   });
   ui.aiOutputs.replaceChildren(...ai.bars.map((b) => b.wrap));
@@ -566,10 +618,26 @@ function showAiResult(result, frame) {
     ai.bars[i].bar.style.width = `${Math.min(1, Math.max(0, v)) * 100}%`; // Balken für Werte 0…1
   });
   drawModelInput(pixels, input);
-  ui.aiStatus.textContent =
+  let status =
     `${(preprocessMs + inferenceMs).toFixed(1)} ms pro Bild ` +
     `(Vorverarbeitung ${preprocessMs.toFixed(1)} ms, Modell ${inferenceMs.toFixed(1)} ms im Browser)`;
-  if (ui.aiDriveHand.checked && state.model) setControls(ai.handMapping(values));
+  if (ui.aiDriveHand.checked && state.model && !ai.winEnabled) setControls(ai.handMapping(values));
+  if (ai.winEnabled && state.model) {
+    const labels = ai.labels.length ? ai.labels : firmwareLabels;
+    const index = values.reduce((best, value, i, all) => (value > all[best] ? i : best), 0);
+    const label = labels[index]?.trim().toLowerCase();
+    const gesture = ({ stein: 'rock', rock: 'rock', papier: 'paper', paper: 'paper', schere: 'scissors', scissors: 'scissors' })[label];
+    if (gesture) {
+      const counter = COUNTER_POSES[gesture];
+      setControls(WINNING_POSES[counter.gesture].controls);
+      status += ` · Erkannt: ${WINNING_POSES[gesture].name} → Hand: ${counter.name}`;
+    } else if (label === 'nothing' || label === 'nichts') {
+      status += ' · Keine Hand erkannt; warte auf eine Pose.';
+    } else {
+      status += ' · Pose nicht unterstützt; prüfe die Modell-Labels.';
+    }
+  }
+  ui.aiStatus.textContent = status;
 }
 
 /** Zeigt das Bild, wie es das Modell bekommt (nach Zuschnitt und Verkleinerung). */
@@ -609,6 +677,21 @@ ui.cameraPixelFormat.addEventListener('change', () => setCameraConfig({ pixelFor
 ui.cameraQuality.addEventListener('input', () => setCameraConfig({ jpegQuality: Number(ui.cameraQuality.value) }));
 
 ui.aiToggle.addEventListener('click', () => toggleAiModel().catch(showAiError));
+ui.aiWin.addEventListener('click', async () => {
+  if (ai.winEnabled) {
+    setAiWinEnabled(false);
+    showAiWaiting();
+    return;
+  }
+  setAiWinEnabled(true);
+  try {
+    if (!ai.model) await loadSelectedAiModel();
+    setAiEnabled(true);
+  } catch (err) {
+    setAiWinEnabled(false);
+    showAiError(err);
+  }
+});
 ui.aiModelSelect.addEventListener('change', () =>
   loadSelectedAiModel().then(() => setAiEnabled(true)).catch(showAiError),
 );

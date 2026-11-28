@@ -2,118 +2,214 @@
 
 [![License: GPL](https://img.shields.io/badge/License-GPL-blue.svg)](LICENSE)
 
-A prototype humanoid robotic hand project that combines a browser-based MuJoCo simulation, live camera hand tracking, and embedded AI inference on ESP32 hardware. The goal is to evaluate hand gestures with an AI model running on an ESP32 which controls an [Amazing Hand](https://github.com/pollen-robotics/AmazingHand).
+A practical prototype and research workspace for a humanoid robotic hand. The project combines a browser-based MuJoCo/three.js simulation, live hand tracking with MediaPipe, and ESP32-CAM/ESP-IDF applications for camera streaming and on-device AI inference.
 
-## Table of contents
+It currently includes three main development paths:
 
-- [What the project does](#what-the-project-does)
-- [Setup instructions](#setup-instructions)
-- [Where users can get help](#where-users-can-get-help)
-- [Who maintains and contributes](#who-maintains-and-contributes)
-- [Repository layout](#repository-layout)
+- **Browser simulation:** Visualize and control the Amazing Hand model with MuJoCo and three.js.
+- **ESP32 AI:** Capture camera frames, preprocess grayscale images, and run a TensorFlow Lite Micro model locally.
+- **ESP32-CAM web server:** Provide the camera feed over Wi-Fi as an MJPEG stream.
+
+Real robotic hand control is not fully implemented yet. The browser application currently includes placeholder mappings and public JavaScript interfaces for later teleoperation and AI integrations.
+
+## Table of Contents
+
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Starting the Browser Simulation](#starting-the-browser-simulation)
+- [ESP32 Applications](#esp32-applications)
+- [Training the AI Model](#training-the-ai-model)
+- [Current Technical Specifications](#current-technical-specifications)
+- [Known Notes](#known-notes)
 - [License](#license)
 
-## What the project does
+## Features
 
-This repository is a practical research and prototyping workspace for a robotic hand that can be explored in multiple ways:
+### Browser Simulation
 
-- The [browser-simulation](./browser-simulation) app loads MuJoCo models directly in the browser and renders them with three.js.
-- It can run a simulated hand model, expose control interfaces, and show live camera input from a laptop webcam for hand landmark detection.
-- The [esp/esp32ai](./esp/esp32ai) project captures camera frames with an ESP32-CAM and runs a TensorFlow Lite Micro model on-device to classify hand states from grayscale input.
-- The [esp/esp32cam](./esp/esp32cam) project provides a camera/web-server setup for ESP32-CAM-based image capture and experimentation.
-- The [CAD](./CAD) folder contains a mechanical design concept for the hand.
+- Loads MuJoCo MJCF models from `browser-simulation/public/models/`.
+- Displays the Amazing Hand model by default.
+- Supports actuator control or direct joint-angle control.
+- Supports webcam-based hand tracking with MediaPipe.
+- Emulates ESP32-CAM resolutions, pixel formats, and JPEG settings in the browser.
+- Runs `.tflite` models in the browser with LiteRT.js.
+- Exposes the simulation through `window.sim` for experiments and integrations.
 
-At a high level, the repository is aimed at bridging simulated control and embedded hardware so a hand can be tested from a browser, visualized in MuJoCo, and eventually deployed onto real hardware.
+Details: [Browser README](./browser-simulation/README.md)
 
-## Setup instructions
+### ESP32 AI Classifier
 
-### Prerequisites
+- ESP-IDF project for an AI-Thinker ESP32-CAM board.
+- Captures grayscale frames through the OV2640 camera.
+- Center-crops and downsamples an image to `64 x 48`.
+- Runs the embedded TensorFlow Lite Micro model from `main/model.cc`.
+- Prints dequantized outputs continuously over the serial console.
 
-For the browser simulation:
+Details: [ESP32 AI README](./esp/esp32ai/README.md)
+
+### ESP32-CAM Web Server
+
+- Native ESP-IDF project with an MJPEG HTTP stream.
+- Uses QVGA/JPEG camera output by default.
+- Configures Wi-Fi through `esp/esp32cam/main/wifi_config.h`.
+
+Details: [ESP32-CAM README](./esp/esp32cam/README.md)
+
+## Project Structure
+
+```text
+.
+├── browser-simulation/          # MuJoCo, three.js, MediaPipe, and LiteRT.js
+│   ├── public/                  # MediaPipe model and MuJoCo assets
+│   └── src/                     # Camera, tracking, renderer, and simulation
+├── esp/
+│   ├── CAD/                     # FreeCAD model of the mechanical housing
+│   ├── esp32ai/                 # ESP32 classifier and model pipeline
+│   │   └── model/               # Capture, training, and live-test scripts
+│   ├── esp32cam/                # Wi-Fi/MJPEG camera project
+│   └── v6.1/                    # Local ESP-IDF toolchain
+├── LICENSE
+└── README.md
+```
+
+Other relevant files:
+
+- `Testdaten Roboterhand.csv`: recorded test data.
+- `esp/esp32ai/main/model.cc`: embedded TFLite model.
+- `esp/esp32ai/model/output/`: artifacts generated by the training scripts.
+
+## Starting the Browser Simulation
+
+### Requirements
 
 - Node.js 20 or newer
-- A modern browser with webcam access for hand tracking
+- A modern browser
+- HTTPS or `http://localhost` for camera access
 
-For the ESP32 AI project:
+### Start
 
-- ESP-IDF v6.1 configured in your shell
-- An AI-Thinker ESP32-CAM board with PSRAM and OV2640
-- USB serial cable for flashing and logs
-
-### 1. Run the browser simulation
-
-```bash
+```sh
 cd browser-simulation
 npm install
 npm run dev
 ```
 
-Then open the local Vite URL in your browser. For local development, the app is commonly served at `http://localhost:5173`.
+The application runs by default at `http://localhost:5173`.
 
-The simulation exposes a browser-side `window.sim` API for controlling the model. Example:
+Load another MuJoCo model by placing a folder under `public/models/` and using the URL parameter:
+
+```text
+http://localhost:5173/?model=amazing_hand
+```
+
+Production build:
+
+```sh
+cd browser-simulation
+npm run build
+npm run preview
+```
+
+Important browser interfaces:
 
 ```js
 window.sim.setControls({ index_flex: 0.8, thumb_abd: 0.3 });
 window.sim.setJoints({ index_mcp: 0.8, index_pip: 0.8 });
-window.sim.hand; // latest detected hand landmarks from the webcam, if enabled
+window.sim.hand; // latest MediaPipe result or null
+window.sim.camera.frame; // latest ESP32-style camera frame
 ```
 
-The browser project includes the MuJoCo model under [browser-simulation/public/models](./browser-simulation/public/models), and it is documented in more detail in [browser-simulation/README.md](./browser-simulation/README.md).
+## ESP32 Applications
 
-### 2. Build and flash the ESP32 AI classifier
+### Requirements
 
-```bash
+- ESP-IDF 6.1
+- AI-Thinker ESP32-CAM with PSRAM and OV2640
+- Adequately rated 5 V power supply
+- USB-to-UART/serial cable
+
+The projects load their dependencies through the ESP-IDF Component Manager.
+
+### Build and Flash ESP32 AI
+
+```sh
 cd esp/esp32ai
 idf.py reconfigure
 idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+idf.py -p PORT flash monitor
 ```
 
-Replace `/dev/ttyUSB0` with the correct serial port for your machine. The project captures grayscale camera frames, preprocesses them to match the model input size, and runs a TensorFlow Lite Micro model continuously.
+Replace `PORT` with the local serial port, for example `/dev/ttyUSB0` or `COM4`.
 
-For full setup instructions, see [esp/esp32ai/README.md](./esp/esp32ai/README.md).
+### Build and Flash the ESP32-CAM Web Server
 
-### 3. Build the ESP32-CAM web project
-
-```bash
+```sh
 cd esp/esp32cam
+```
+
+Then copy `main/wifi_config.h.example` to `main/wifi_config.h` and enter the Wi-Fi credentials. Keep this file local and do not commit it.
+
+```sh
 idf.py reconfigure
 idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+idf.py -p PORT flash monitor
 ```
 
-This project is intended for ESP32-CAM image capture and web-server experimentation. See [esp/esp32cam/README.md](./esp/esp32cam/README.md) for details.
+The device IP address is printed in the serial monitor after it connects. The stream is then available at `http://DEVICE_IP/`.
 
-## Repository layout
+## Training the AI Model
 
-```text
-.
-├── CAD/                          # Mechanical / CAD assets
-├── LICENSE                       # Project license
-├── README.md                     # Main project documentation
-├── .github/
-│   ├── skills/
-│   └── workflows/                # ESP32 CI/build workflows
-├── browser-simulation/           # MuJoCo + three.js + MediaPipe browser app
-│   ├── README.md
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── public/
-│   └── src/
-├── esp/
-│   ├── esp32ai/                  # Embedded TensorFlow Lite Micro classifier
-│   │   ├── README.md
-│   │   ├── CMakeLists.txt
-│   │   ├── create_model.py
-│   │   ├── hand.tflite
-│   │   └── main/
-│   └── esp32cam/                 # ESP32-CAM project for camera/web work
-│       ├── README.md
-│       ├── CMakeLists.txt
-│       └── main/
-└── .gitignore
+The training tools are located in `esp/esp32ai/model/`:
+
+```sh
+cd esp/esp32ai/model
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
+
+Typical workflow:
+
+```sh
+python capture_images.py --source 0
+python train_model.py --data data
+python test_live.py --source 0
+```
+
+The training scripts generate, among other artifacts, the following in `model/output/`:
+
+- `hand.tflite`
+- `model.cc`
+- the mapping of model outputs to classes
+
+After training, copy the firmware-required files into `esp/esp32ai/main/`. The firmware project uses `main/model.cc` together with `main/model.h`.
+
+## Current Technical Specifications
+
+| Area | Status |
+| --- | --- |
+| Browser framework | Vite 8.3, ECMAScript module project |
+| 3D simulation | MuJoCo 3.17.0 WASM, three.js 0.187.0 |
+| Hand tracking | MediaPipe Tasks Vision 1.2.2 |
+| Browser AI | LiteRT.js/Core 2.6.0 |
+| ESP32 camera driver | Espressif `esp32-camera`, included through Component Manager |
+| ESP32 AI tensor | Int8, `[1, 48, 64, 1]`, 64 x 48 pixels, one grayscale channel |
+| ESP32 tensor arena | 48 KB in PSRAM |
+| Default model input | QVGA/320 x 240, grayscale |
+| Training classes | nothing, paper, scissors, rock |
+| CAD path | `esp/CAD/case_human_robotic.FCStd` |
+
+The CAD entry is the actual filename in the repository. The training model recognizes the four classes above; the exact mapping is provided in the training pipeline output.
+
+## Known Notes
+
+- The browser simulation is designed for an AI-Thinker/OV2640 ESP32-CAM.
+- Camera resolution and format are emulated in the browser, but hardware effects such as sensor noise, exposure, and real JPEG artifacts are not reproduced exactly.
+- Browser inference performance does not indicate runtime or memory requirements on the ESP32.
+- The firmware refers to the embedded model in `main/model.cc`; the model must match the input shape `[1, 48, 64, 1]`.
+- A larger `kArena` may be required after changing the model.
+- In the current worktree, the `esp/esp32ai/hand.tflite` file expected by the browser as a default model is missing. The browser build still references it and therefore will not build successfully until the file is restored or the import is adjusted.
+- ESP32-CAM test data and private training images should not be accidentally added to the repository.
 
 ## License
 

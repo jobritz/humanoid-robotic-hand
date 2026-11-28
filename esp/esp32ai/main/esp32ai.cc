@@ -6,6 +6,8 @@
 #include "esp_heap_caps.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <stddef.h>
+#include <string.h>
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/schema/schema_generated.h"
@@ -31,10 +33,62 @@
 
 static const char *TAG = "esp32ai";
 
-constexpr size_t kArena = 32 * 1024; // 32 KB Tensor Arena in PSRAM
-constexpr int kInputWidth = 80;
-constexpr int kInputHeight = 60;
+constexpr size_t kArena = 48 * 1024; // 48 KB Tensor Arena in PSRAM
+constexpr int kInputWidth = 64;
+constexpr int kInputHeight = 48;
 constexpr size_t kInputSize = kInputWidth * kInputHeight;
+
+// load label from labels.txt (embedded in the binary by the linker)
+extern const char labels_txt_start[] asm("_binary_labels_txt_start");
+extern const char labels_txt_end[] asm("_binary_labels_txt_end");
+
+static const char *label_for_output(size_t index)
+{
+    size_t line_index = 0;
+    const char *line = labels_txt_start;
+
+    while (line < labels_txt_end) {
+        const char *line_end = line;
+        while (line_end < labels_txt_end &&
+               *line_end != '\r' && *line_end != '\n') {
+            line_end++;
+        }
+
+        if (line_index == index) {
+            const char *equals = line;
+            while (equals < line_end && *equals != '=') {
+                equals++;
+            }
+            if (equals < line_end) {
+                equals++;
+                while (equals < line_end &&
+                       (*equals == ' ' || *equals == '\t')) {
+                    equals++;
+                }
+                if (equals < line_end) {
+                    static char label[64];
+                    const size_t length =
+                        static_cast<size_t>(line_end - equals);
+                    const size_t copy_length =
+                        length < sizeof(label) - 1 ? length : sizeof(label) - 1;
+                    memcpy(label, equals, copy_length);
+                    label[copy_length] = '\0';
+                    return label;
+                }
+            }
+            return "Unknown";
+        }
+
+        line_index++;
+        line = line_end;
+        while (line < labels_txt_end &&
+               (*line == '\r' || *line == '\n')) {
+            line++;
+        }
+    }
+
+    return "Unknown";
+}
 
 // Log the tensor's name, type, shape, number of bytes, scale, and zero point.
 static void log_tensor(const char *name, const TfLiteTensor *tensor)
@@ -195,7 +249,7 @@ static void run_model(void)
             const float probability =
                 (static_cast<int32_t>(out->data.int8[i]) - out->params.zero_point) *
                 out->params.scale;
-            printf("Output[%u]: %.6f\n", static_cast<unsigned>(i), probability);
+            printf("%s: %.6f\n", label_for_output(i), probability);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
