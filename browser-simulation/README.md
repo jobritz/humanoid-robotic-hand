@@ -55,7 +55,7 @@ Mitgelieferte Modelle:
 | Kamera aktivieren / beenden | Startet bzw. stoppt Webcam und Hand-Tracking, Vorschau unten rechts |
 | Auflösung, Farbcodierung, JPEG-Qualität | Kamerabild einstellen, wirkt sofort, auch bei laufender Kamera |
 | Simulierte Hand folgt der echten Hand | Die erkannte Hand steuert die simulierte Hand (Physik-Modus) |
-| Gesten-Modell | Modell starten, Eingabe wählen (Kamera oder Slider), erkannte Geste ansehen |
+| Gesten-Modell | Modell starten, erkannte Geste der echten Hand (Kamera) ansehen |
 | Schere, Stein, Papier gewinnen | Die simulierte Hand zeigt die Gegenpose zur erkannten Geste |
 | Geom-Gruppen | Ein-/Ausblenden von Geom-Gruppen (Standard: 0–2 sichtbar, Kollisions-Geoms oft in Gruppe 3) |
 | Maus | Linke Taste drehen, rechte Taste verschieben, Mausrad zoomen |
@@ -130,21 +130,18 @@ Landmarken-Indizes: 0 Handgelenk · 1–4 Daumen (CMC, MCP, IP, Spitze) · 5–8
 
 ## Gesten-Modell (Aktuatoren)
 
-Erkennt die Geste (Stein, Schere, Papier, keine Geste) aus den **8 Aktuator-Stellungen** der Hand. Trainiert wird es
-mit [`model/gesture`](../model/gesture/README.md) (SCRUM-37).
+Erkennt die Geste (Stein, Schere, Papier, keine Geste) der **echten Hand vor der Kamera** aus deren 8 Aktuator-Stellungen.
+Trainiert wird es mit [`model/gesture`](../model/gesture/README.md) (SCRUM-37).
 
 1. Das Modell aus `model/gesture/output/` steht direkt in der Auswahl (zurzeit ein Platzhalter, trainiert mit
    künstlichen Daten). Andere Modelle: „Datei öffnen…“ → `gesture.tflite` und `labels.txt` zusammen auswählen.
-2. **Modell starten.**
-3. **Eingabe „Echte Hand (Kamera)“** (Standard): Kamera aktivieren und eine Geste zeigen. Das Modell bekommt die aus den
-   Landmarken berechneten Aktuator-Stellungen direkt, so wie später auf dem Raspberry Pi.
-4. **Eingabe „Simulierte Hand (Slider)“**: Das Modell wertet die Stellung der simulierten Hand aus
-   (`data.actuator_length`, die tatsächliche Gelenkstellung an den Aktuatoren). Geste mit den Aktuator-Slidern einstellen.
-5. Oben steht z. B. `Erkannt: Schere (97 %)`, darunter die Wahrscheinlichkeit jeder Geste.
-6. **Schere, Stein, Papier gewinnen:** Die simulierte Hand zeigt die Geste, die gegen die erkannte gewinnt: Papier gegen
-   Stein, Schere gegen Papier, Stein gegen Schere. Bei „keine Geste“ bleibt sie stehen. Funktioniert nur mit der Kamera
-   als Eingabe (mit der simulierten Hand als Eingabe würde die Gegenpose sofort wieder erkannt) und im Physik-Modus.
-   Solange der Gewinnmodus läuft, folgt die simulierte Hand nicht der echten Hand.
+2. Kamera aktivieren und **Modell starten**.
+3. Eine Geste in die Kamera zeigen. Das Modell bekommt die aus den Landmarken berechneten Aktuator-Stellungen direkt,
+   ohne Umweg über die simulierte Hand, so wie später auf dem Raspberry Pi.
+4. Oben steht z. B. `Erkannt: Schere (97 %)`, darunter die Wahrscheinlichkeit jeder Geste.
+5. **Schere, Stein, Papier gewinnen:** Die simulierte Hand zeigt die Geste, die gegen die erkannte gewinnt: Papier gegen
+   Stein, Schere gegen Papier, Stein gegen Schere. Bei „keine Geste“ bleibt sie stehen. Wirkt im Physik-Modus. Solange
+   der Gewinnmodus läuft, folgt die simulierte Hand nicht der echten Hand.
 
 Getestet mit den offiziellen MediaPipe-Testbildern als Webcam: Faust → Stein (97 %), Victory-Zeichen → Schere (95 %),
 flache Hand → Papier (75 %).
@@ -178,7 +175,7 @@ window.sim.gestureModel.info               // geladenes Modell { name, size, lab
 window.sim.gestureModel.result             // letztes Ergebnis { inputs, values, label, score, inferenceMs } oder null
 await window.sim.gestureModel.load(url, labelsText) // Modell (URL, File, Uint8Array) + labels.txt-Text oder Array laden
 await window.sim.gestureModel.run([1.57, 0, 1.57, 0, 1.57, 0, 1.57, 0]) // eigene Werte → { values, label, score }
-await window.sim.gestureModel.run()        // aktuelle Stellung der simulierten Hand auswerten
+await window.sim.gestureModel.run()        // zuletzt von der Kamera erkannte Hand auswerten
 
 // Beispiel: Abstand zwischen Daumen- und Zeigefingerspitze in cm
 const p = window.sim.hand.worldLandmarks;

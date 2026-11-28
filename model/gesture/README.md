@@ -73,9 +73,9 @@ python predict_gesture.py 1.57 0 1.57 0 1.57 0 1.57 0     # Einzelwerte -> Wahrs
 python predict_gesture.py --csv aufnahme3.csv             # ganze Aufnahme -> Anteil richtig erkannt
 ```
 
-In der Browser-Simulation: Bereich **„Gesten-Modell (Aktuatoren)“** → „Datei öffnen…“ → `gesture.tflite` und
-`labels.txt` zusammen auswählen. Das Modell wertet dann laufend die aktuelle Handstellung aus, gesteuert über die Slider.
-Liegt das Modell eingecheckt unter `model/gesture/output/`, wird es dort automatisch angeboten.
+In der Browser-Simulation: Kamera aktivieren, im Bereich **„Gesten-Modell (Aktuatoren)“** das Modell starten und eine
+Geste in die Kamera zeigen. Das Modell aus `model/gesture/output/` wird automatisch angeboten, andere Modelle über
+„Datei öffnen…“ (`gesture.tflite` und `labels.txt` zusammen auswählen).
 
 ## Echte Hand per Kamera: Landmarken → Aktuator-Stellungen
 

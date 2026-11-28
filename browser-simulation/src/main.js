@@ -53,7 +53,6 @@ const ui = {
   cameraFrame: $('camera-frame'),
   cameraOverlay: $('camera-overlay'),
   gestureModelSelect: $('gesture-model-select'),
-  gestureSource: $('gesture-source'),
   gestureToggle: $('gesture-toggle'),
   gestureOpen: $('gesture-open'),
   gestureFileInput: $('gesture-file-input'),
@@ -526,20 +525,6 @@ const gestureState = {
   winEnabled: false, // Gewinnmodus: simulierte Hand zeigt die Gegenpose zur erkannten Geste
 };
 
-/**
- * Aktuelle Stellung der 8 Aktuatoren in rad, Reihenfolge wie GESTURE_INPUTS. Gelesen wird actuator_length, also die
- * tatsächliche Gelenkstellung am Aktuator – im Physik-Modus (Slider setzen Sollwerte) wie im Kinematik-Modus.
- */
-function readGestureInputs() {
-  const { mujoco, model, data } = state;
-  const lengths = data.actuator_length;
-  return GESTURE_INPUTS.map((name) => {
-    const id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR.value, name);
-    if (id < 0) throw new Error(`Das geladene Handmodell hat keinen Aktuator „${name}“.`);
-    return lengths[id];
-  });
-}
-
 async function loadGestureModel({ source, name, labels = [] }) {
   setGestureInfo(`Lade ${name}…`);
   ui.gestureToggle.disabled = true;
@@ -607,28 +592,21 @@ function showGestureModel() {
   ui.gestureOutputs.replaceChildren(...gestureState.bars.map((b) => b.wrap));
 }
 
-/** Wertet die aktuelle Handstellung aus, sofern das Modell läuft und gerade frei ist (aufgerufen je Bild). */
+/**
+ * Wertet die echte Hand aus, sofern das Modell läuft und gerade frei ist (aufgerufen je Bild der Simulation).
+ * Eingabe sind die aus der Kamera berechneten Aktuator-Stellungen, direkt und ohne Umweg über die simulierte Hand –
+ * wie später auf dem Raspberry Pi.
+ */
 function runGestureModel() {
   const { model } = gestureState;
   if (!gestureState.enabled || !model || gestureState.running || !state.model) return;
-  let inputs;
-  if (ui.gestureSource.value === 'camera') {
-    // Direkt aus der Kamera, ohne Umweg über die (verzögert nachfahrende) simulierte Hand – wie später auf dem Pi.
-    inputs = state.handActuators;
-    if (!inputs) {
-      ui.gestureDetected.textContent = '';
-      ui.gestureStatus.textContent = camera.running
-        ? 'Keine Hand im Bild.'
-        : 'Wartet auf die Kamera – oben bei „Kamera & Hand-Tracking“ aktivieren.';
-      return;
-    }
-  } else {
-    try {
-      inputs = readGestureInputs();
-    } catch (err) {
-      showGestureError(err);
-      return;
-    }
+  const inputs = state.handActuators;
+  if (!inputs) {
+    ui.gestureDetected.textContent = '';
+    ui.gestureStatus.textContent = camera.running
+      ? 'Keine Hand im Bild.'
+      : 'Wartet auf die Kamera – oben bei „Kamera & Hand-Tracking“ aktivieren.';
+    return;
   }
   gestureState.running = model
     .run(inputs)
@@ -651,8 +629,7 @@ function showGestureResult(inputs, values, inferenceMs) {
     gestureState.bars[i].bar.style.width = `${Math.min(1, Math.max(0, v)) * 100}%`;
   });
   ui.gestureDetected.textContent = `Erkannt: ${GESTURE_NAMES[label] ?? label} (${(values[best] * 100).toFixed(0)} %)`;
-  const source = ui.gestureSource.value === 'camera' ? 'echte Hand (Kamera)' : 'simulierte Hand';
-  let status = `Eingabe: ${source} · ${inferenceMs.toFixed(2)} ms pro Auswertung im Browser`;
+  let status = `${inferenceMs.toFixed(2)} ms pro Auswertung im Browser`;
   if (gestureState.winEnabled && state.model) {
     const counter = COUNTER_POSES[label];
     if (counter) {
@@ -669,7 +646,6 @@ function showGestureResult(inputs, values, inferenceMs) {
 function setGestureWinEnabled(enabled) {
   gestureState.winEnabled = enabled;
   ui.gestureWin.textContent = enabled ? 'Gewinnmodus beenden' : 'Schere, Stein, Papier gewinnen';
-  if (enabled) ui.gestureSource.value = 'camera';
 }
 
 function fillGestureModelSelect(selected = 0) {
@@ -711,10 +687,6 @@ ui.gestureWin.addEventListener('click', async () => {
   } catch (err) {
     showGestureError(err);
   }
-});
-ui.gestureSource.addEventListener('change', () => {
-  // Mit der simulierten Hand als Eingabe würde die Gegenpose sofort wieder als Geste erkannt.
-  if (ui.gestureSource.value !== 'camera') setGestureWinEnabled(false);
 });
 
 ui.gestureToggle.addEventListener('click', () => toggleGestureModel().catch(showGestureError));
@@ -831,9 +803,10 @@ window.sim = {
       setGestureEnabled(true);
       return this.info;
     },
-    /** Wertet eigene Werte aus (8 Zahlen in rad), unabhängig von der Simulation; ohne Argument die aktuelle Hand. */
-    async run(values = readGestureInputs()) {
+    /** Wertet eigene Werte aus (8 Zahlen in rad); ohne Argument die zuletzt von der Kamera erkannte Hand. */
+    async run(values = state.handActuators) {
       if (!gestureState.model) throw new Error('Kein Gesten-Modell geladen.');
+      if (!values) throw new Error('Keine Werte übergeben und keine Hand von der Kamera erkannt.');
       const { values: scores } = await gestureState.model.run(values);
       const best = scores.reduce((b, v, i) => (v > scores[b] ? i : b), 0);
       return { values: scores, label: gestureState.labels[best] ?? `Output[${best}]`, score: scores[best] };
